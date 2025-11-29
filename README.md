@@ -2,6 +2,8 @@
 
 一个支持 Gemini、OpenAI、Anthropic 等多种 LLM API 的 Edge 浏览器侧边栏插件，可以对网页划词或提供的资料进行对话提问。
 
+![演示截图](screenshots/image.png)
+
 ## ✨ 功能特性
 
 ### 🎯 智能划词
