@@ -157,9 +157,13 @@ function updateModelOptions() {
         .map(m => `<option value="${m.id}">${m.name}</option>`)
         .join('');
 
-    // 设置默认模型
+    // 如果当前保存的模型不在新的提供商列表中，设置为第一个模型
     if (!models.find(m => m.id === state.settings.model)) {
         state.settings.model = models[0].id;
+        elements.modelSelect.value = state.settings.model;
+    } else {
+        // 确保选中正确的模型
+        elements.modelSelect.value = state.settings.model;
     }
 }
 
@@ -239,11 +243,20 @@ function showPendingSelection() {
         : state.pendingSelection;
     elements.pendingSelectionText.textContent = `已选中: "${preview}"`;
     elements.pendingSelectionBar.classList.remove('hidden');
+    updateAttachmentsBarPosition();
 }
 
 // 隐藏待发送的选中文本提示
 function hidePendingSelection() {
     elements.pendingSelectionBar.classList.add('hidden');
+    updateAttachmentsBarPosition();
+}
+
+// 更新附件列表的位置
+function updateAttachmentsBarPosition() {
+    const isPendingVisible = !elements.pendingSelectionBar.classList.contains('hidden');
+    const pendingHeight = isPendingVisible ? elements.pendingSelectionBar.offsetHeight : 0;
+    elements.attachmentsBar.style.top = `${pendingHeight}px`;
 }
 
 // 生成附件ID
@@ -274,10 +287,12 @@ function clearAllAttachments() {
 function renderAttachments() {
     if (state.attachments.length === 0) {
         elements.attachmentsBar.classList.add('hidden');
+        updateAttachmentsBarPosition();
         return;
     }
 
     elements.attachmentsBar.classList.remove('hidden');
+    updateAttachmentsBarPosition();
     elements.attachmentsList.innerHTML = '';
 
     state.attachments.forEach(att => {
@@ -1282,6 +1297,14 @@ function formatContent(content) {
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;');
+
+    // 标题（必须在行首）
+    formatted = formatted.replace(/^######\s+(.+)$/gm, '<h6>$1</h6>');
+    formatted = formatted.replace(/^#####\s+(.+)$/gm, '<h5>$1</h5>');
+    formatted = formatted.replace(/^####\s+(.+)$/gm, '<h4>$1</h4>');
+    formatted = formatted.replace(/^###\s+(.+)$/gm, '<h3>$1</h3>');
+    formatted = formatted.replace(/^##\s+(.+)$/gm, '<h2>$1</h2>');
+    formatted = formatted.replace(/^#\s+(.+)$/gm, '<h1>$1</h1>');
 
     // 粗体
     formatted = formatted.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
