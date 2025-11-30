@@ -4,7 +4,7 @@ const DEFAULT_SYSTEM_PROMPT = `你是一个智能助手，正在帮助用户阅�
 你的职责：
 1. 根据提供的页面上下文和用户选中的文本，准确回答用户的问题
 2. 如果用户选中了文本，优先围绕选中内容进行分析、解释、翻译或总结
-3. 回答要简洁明了，必要时使用列表或分点说明
+3. 回答要简洁明了, 保持回答结构清晰但不过度格式化，使用段落形式而非过多的列表嵌套
 4. 如果页面内容不足以回答问题，请诚实说明并提供你所知道的相关信息
 5. 对于代码片段，提供清晰的解释；对于外语内容，提供准确的翻译
 
@@ -91,6 +91,7 @@ const elements = {
 
 // 初始化
 async function init() {
+    setupMarked(); // 配置 marked
     await loadSettings();
     setupEventListeners();
     setupMessageListener();
@@ -911,18 +912,87 @@ async function sendMessage() {
     // 显示加载状态
     state.isLoading = true;
     updateSendButtonState();
-    const typingEl = showTypingIndicator();
+    
+    // 创建助手消息元素用于流式输出
+    const assistantMsgEl = createStreamingMessage();
 
     try {
-        const response = await callLLMAPI(content, fileAttachments);
-        removeTypingIndicator(typingEl);
-        addMessage('assistant', response);
+        await callLLMAPIStreaming(content, fileAttachments, assistantMsgEl);
+        // 流式完成后保存消息
+        const finalContent = assistantMsgEl.dataset.rawContent || '';
+        saveAssistantMessage(finalContent);
     } catch (error) {
-        removeTypingIndicator(typingEl);
-        addMessage('error', `错误: ${error.message}`);
+        assistantMsgEl.querySelector('.message-content').innerHTML = 
+            `<span style="color: var(--error-color)">错误: ${escapeHtml(error.message)}</span>`;
     } finally {
         state.isLoading = false;
         updateSendButtonState();
+    }
+}
+
+// 创建流式输出的消息元素
+function createStreamingMessage() {
+    // 移除欢迎消息
+    const welcomeMsg = elements.chatContainer.querySelector('.welcome-message');
+    if (welcomeMsg) {
+        welcomeMsg.remove();
+    }
+    
+    const msgEl = document.createElement('div');
+    msgEl.className = 'message assistant';
+    msgEl.innerHTML = '<div class="message-content"><span class="streaming-cursor">▊</span></div>';
+    msgEl.dataset.rawContent = '';
+    elements.chatContainer.appendChild(msgEl);
+    scrollToBottom();
+    return msgEl;
+}
+
+// 更新流式消息内容
+function updateStreamingMessage(msgEl, content) {
+    msgEl.dataset.rawContent = content;
+    const contentEl = msgEl.querySelector('.message-content');
+    contentEl.innerHTML = formatContent(content) + '<span class="streaming-cursor">▊</span>';
+    scrollToBottom();
+}
+
+// 完成流式消息
+function finalizeStreamingMessage(msgEl) {
+    const content = msgEl.dataset.rawContent || '';
+    const contentEl = msgEl.querySelector('.message-content');
+    contentEl.innerHTML = formatContent(content);
+}
+
+// 保存助手消息到历史
+function saveAssistantMessage(content) {
+    const message = {
+        role: 'assistant',
+        content,
+        timestamp: Date.now(),
+        attachments: null
+    };
+    state.messages.push(message);
+    chrome.storage.local.set({ messages: state.messages });
+}
+
+// 调用 LLM API - 流式输出
+async function callLLMAPIStreaming(userMessage, fileAttachments, msgEl) {
+    const { provider, apiKey, model, systemPrompt } = state.settings;
+    const effectiveSystemPrompt = systemPrompt || DEFAULT_SYSTEM_PROMPT;
+    
+    const history = state.messages.slice(-10).map(m => ({
+        role: m.role === 'user' ? 'user' : 'assistant',
+        content: m.content
+    }));
+
+    switch (provider) {
+        case 'gemini':
+            return await callGeminiStreaming(apiKey, model, userMessage, history, effectiveSystemPrompt, fileAttachments, msgEl);
+        case 'openai':
+            return await callOpenAIStreaming(apiKey, model, userMessage, history, effectiveSystemPrompt, fileAttachments, msgEl);
+        case 'anthropic':
+            return await callAnthropicStreaming(apiKey, model, userMessage, history, effectiveSystemPrompt, fileAttachments, msgEl);
+        default:
+            throw new Error('不支持的提供商');
     }
 }
 
@@ -1142,6 +1212,232 @@ async function callAnthropic(apiKey, model, userMessage, history, systemPrompt, 
     return data.content?.[0]?.text || '无响应';
 }
 
+// ============ 流式 API 调用 ============
+
+// Gemini 流式 API
+async function callGeminiStreaming(apiKey, model, userMessage, history, systemPrompt, fileAttachments, msgEl) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?key=${apiKey}&alt=sse`;
+
+    const contents = [];
+    contents.push({ role: 'user', parts: [{ text: `System: ${systemPrompt}` }] });
+    contents.push({ role: 'model', parts: [{ text: '好的，我会按照您的要求来回答问题。' }] });
+
+    for (const msg of history) {
+        contents.push({
+            role: msg.role === 'user' ? 'user' : 'model',
+            parts: [{ text: msg.content }]
+        });
+    }
+
+    const currentParts = [];
+    for (const file of fileAttachments) {
+        const base64Data = file.base64.split(',')[1];
+        currentParts.push({ inline_data: { mime_type: file.mimeType, data: base64Data } });
+    }
+    currentParts.push({ text: userMessage });
+    contents.push({ role: 'user', parts: currentParts });
+
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            contents,
+            generationConfig: { temperature: 0.7, maxOutputTokens: 8192 }
+        })
+    });
+
+    if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error?.message || `API 错误: ${response.status}`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let fullContent = '';
+
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split('\n');
+
+        for (const line of lines) {
+            if (line.startsWith('data: ')) {
+                try {
+                    const data = JSON.parse(line.slice(6));
+                    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+                    if (text) {
+                        fullContent += text;
+                        updateStreamingMessage(msgEl, fullContent);
+                    }
+                } catch (e) {}
+            }
+        }
+    }
+
+    finalizeStreamingMessage(msgEl);
+    return fullContent;
+}
+
+// OpenAI 流式 API
+async function callOpenAIStreaming(apiKey, model, userMessage, history, systemPrompt, fileAttachments, msgEl) {
+    const messages = [];
+    if (systemPrompt) {
+        messages.push({ role: 'system', content: systemPrompt });
+    }
+    messages.push(...history);
+
+    const images = fileAttachments.filter(f => f.type === 'image');
+    const pdfs = fileAttachments.filter(f => f.type === 'pdf');
+
+    if (images.length > 0) {
+        const content = [];
+        images.forEach(img => {
+            content.push({ type: 'image_url', image_url: { url: img.base64 } });
+        });
+        let text = userMessage;
+        if (pdfs.length > 0) {
+            text += `\n\n（注意：已忽略 ${pdfs.length} 个 PDF 文件，OpenAI 不支持直接处理 PDF，请使用 Gemini）`;
+        }
+        content.push({ type: 'text', text });
+        messages.push({ role: 'user', content });
+    } else if (pdfs.length > 0) {
+        messages.push({ role: 'user', content: userMessage + `\n\n（注意：已忽略 ${pdfs.length} 个 PDF 文件）` });
+    } else {
+        messages.push({ role: 'user', content: userMessage });
+    }
+
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+            model,
+            messages,
+            temperature: 0.7,
+            max_tokens: 4096,
+            stream: true
+        })
+    });
+
+    if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error?.message || `API 错误: ${response.status}`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let fullContent = '';
+
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split('\n');
+
+        for (const line of lines) {
+            if (line.startsWith('data: ') && line !== 'data: [DONE]') {
+                try {
+                    const data = JSON.parse(line.slice(6));
+                    const text = data.choices?.[0]?.delta?.content || '';
+                    if (text) {
+                        fullContent += text;
+                        updateStreamingMessage(msgEl, fullContent);
+                    }
+                } catch (e) {}
+            }
+        }
+    }
+
+    finalizeStreamingMessage(msgEl);
+    return fullContent;
+}
+
+// Anthropic 流式 API
+async function callAnthropicStreaming(apiKey, model, userMessage, history, systemPrompt, fileAttachments, msgEl) {
+    const images = fileAttachments.filter(f => f.type === 'image');
+    const pdfs = fileAttachments.filter(f => f.type === 'pdf');
+
+    let currentContent;
+    if (images.length > 0) {
+        currentContent = [];
+        images.forEach(img => {
+            const base64Data = img.base64.split(',')[1];
+            currentContent.push({
+                type: 'image',
+                source: { type: 'base64', media_type: img.mimeType, data: base64Data }
+            });
+        });
+        let text = userMessage;
+        if (pdfs.length > 0) {
+            text += `\n\n（注意：已忽略 ${pdfs.length} 个 PDF 文件，Anthropic 不支持直接处理 PDF，请使用 Gemini）`;
+        }
+        currentContent.push({ type: 'text', text });
+    } else if (pdfs.length > 0) {
+        currentContent = userMessage + `\n\n（注意：已忽略 ${pdfs.length} 个 PDF 文件）`;
+    } else {
+        currentContent = userMessage;
+    }
+
+    const messages = [...history, { role: 'user', content: currentContent }];
+
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': apiKey,
+            'anthropic-version': '2023-06-01',
+            'anthropic-dangerous-direct-browser-access': 'true'
+        },
+        body: JSON.stringify({
+            model,
+            max_tokens: 4096,
+            system: systemPrompt || undefined,
+            messages,
+            stream: true
+        })
+    });
+
+    if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error?.message || `API 错误: ${response.status}`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let fullContent = '';
+
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split('\n');
+
+        for (const line of lines) {
+            if (line.startsWith('data: ')) {
+                try {
+                    const data = JSON.parse(line.slice(6));
+                    if (data.type === 'content_block_delta') {
+                        const text = data.delta?.text || '';
+                        if (text) {
+                            fullContent += text;
+                            updateStreamingMessage(msgEl, fullContent);
+                        }
+                    }
+                } catch (e) {}
+            }
+        }
+    }
+
+    finalizeStreamingMessage(msgEl);
+    return fullContent;
+}
+
 // 添加消息（支持多附件）
 function addMessage(role, content, attachments = null) {
     // 处理附件，只保存必要信息
@@ -1353,75 +1649,46 @@ function escapeHtml(text) {
         .replace(/'/g, '&#039;');
 }
 
-// 格式化内容 (简单 Markdown + 数学公式)
-function formatContent(content) {
-    // 先保护代码块，避免内部内容被处理
-    const codeBlocks = [];
-    let formatted = content.replace(/```(\w*)\n([\s\S]*?)```/g, (match, lang, code) => {
-        const idx = codeBlocks.length;
-        codeBlocks.push({ lang, code });
-        return `__CODE_BLOCK_${idx}__`;
-    });
-    
-    // 保护行内代码
-    const inlineCodes = [];
-    formatted = formatted.replace(/`([^`]+)`/g, (match, code) => {
-        const idx = inlineCodes.length;
-        inlineCodes.push(code);
-        return `__INLINE_CODE_${idx}__`;
-    });
+// 配置 marked
+function setupMarked() {
+    if (typeof marked !== 'undefined') {
+        marked.setOptions({
+            breaks: true,
+            gfm: true
+        });
+    }
+}
 
-    // 保护数学公式
+// 格式化内容 - 使用 marked 渲染 Markdown，KaTeX 渲染公式
+function formatContent(content) {
+    // 保护数学公式，避免被 marked 处理
     const mathBlocks = [];
     const mathInlines = [];
     
     // 保护块级公式 $$...$$
-    formatted = formatted.replace(/\$\$([\s\S]*?)\$\$/g, (match, formula) => {
+    let formatted = content.replace(/\$\$([\s\S]*?)\$\$/g, (match, formula) => {
         const idx = mathBlocks.length;
         mathBlocks.push(formula.trim());
-        return `__MATH_BLOCK_${idx}__`;
+        return `%%MATH_BLOCK_${idx}%%`;
     });
     
-    // 保护行内公式 $...$ 
+    // 保护行内公式 $...$
     formatted = formatted.replace(/\$([^\$\n]+?)\$/g, (match, formula) => {
         const idx = mathInlines.length;
         mathInlines.push(formula.trim());
-        return `__MATH_INLINE_${idx}__`;
+        return `%%MATH_INLINE_${idx}%%`;
     });
 
-    // 转义 HTML
-    formatted = formatted
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;');
-
-    // 标题（必须在行首）
-    formatted = formatted.replace(/^######\s+(.+)$/gm, '<h6>$1</h6>');
-    formatted = formatted.replace(/^#####\s+(.+)$/gm, '<h5>$1</h5>');
-    formatted = formatted.replace(/^####\s+(.+)$/gm, '<h4>$1</h4>');
-    formatted = formatted.replace(/^###\s+(.+)$/gm, '<h3>$1</h3>');
-    formatted = formatted.replace(/^##\s+(.+)$/gm, '<h2>$1</h2>');
-    formatted = formatted.replace(/^#\s+(.+)$/gm, '<h1>$1</h1>');
-
-    // 粗体
-    formatted = formatted.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-
-    // 斜体
-    formatted = formatted.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-    
-    // 恢复代码块
-    formatted = formatted.replace(/__CODE_BLOCK_(\d+)__/g, (match, idx) => {
-        const { code } = codeBlocks[parseInt(idx)];
-        return `<pre><code>${escapeHtml(code)}</code></pre>`;
-    });
-    
-    // 恢复行内代码
-    formatted = formatted.replace(/__INLINE_CODE_(\d+)__/g, (match, idx) => {
-        return `<code>${escapeHtml(inlineCodes[parseInt(idx)])}</code>`;
-    });
+    // 使用 marked 渲染 Markdown
+    if (typeof marked !== 'undefined') {
+        formatted = marked.parse(formatted);
+    } else {
+        // 回退到简单处理
+        formatted = escapeHtml(formatted).replace(/\n/g, '<br>');
+    }
     
     // 恢复块级公式 - 使用 KaTeX 渲染
-    formatted = formatted.replace(/__MATH_BLOCK_(\d+)__/g, (match, idx) => {
+    formatted = formatted.replace(/%%MATH_BLOCK_(\d+)%%/g, (match, idx) => {
         const formula = mathBlocks[parseInt(idx)];
         try {
             if (typeof katex !== 'undefined') {
@@ -1435,12 +1702,11 @@ function formatContent(content) {
         } catch (e) {
             console.warn('KaTeX render error:', e);
         }
-        // 回退到纯文本显示
-        return `<div class="math-block"><code class="math-formula">${escapeHtml(formula)}</code></div>`;
+        return `<div class="math-block"><code>${escapeHtml(formula)}</code></div>`;
     });
     
     // 恢复行内公式 - 使用 KaTeX 渲染
-    formatted = formatted.replace(/__MATH_INLINE_(\d+)__/g, (match, idx) => {
+    formatted = formatted.replace(/%%MATH_INLINE_(\d+)%%/g, (match, idx) => {
         const formula = mathInlines[parseInt(idx)];
         try {
             if (typeof katex !== 'undefined') {
@@ -1454,8 +1720,7 @@ function formatContent(content) {
         } catch (e) {
             console.warn('KaTeX render error:', e);
         }
-        // 回退到纯文本显示
-        return `<code class="math-inline">${escapeHtml(formula)}</code>`;
+        return `<code>${escapeHtml(formula)}</code>`;
     });
 
     return formatted;
