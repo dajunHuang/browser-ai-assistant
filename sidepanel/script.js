@@ -109,9 +109,9 @@ function setupTabListener() {
         checkCurrentPageStatus();
     });
     
-    // 标签页 URL 变化
+    // 标签页 URL 变化 - 只在页面加载完成时检测
     chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-        if (changeInfo.url || changeInfo.status === 'complete') {
+        if (changeInfo.status === 'complete') {
             // 检查是否为当前活动标签页
             chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
                 if (tabs[0]?.id === tabId) {
@@ -128,13 +128,22 @@ async function checkCurrentPageStatus() {
         const response = await chrome.runtime.sendMessage({ type: 'CHECK_PAGE_STATUS' });
         if (response) {
             updatePageContextAvailability(!response.isSpecialPage);
-            // 如果是普通页面，预加载页面上下文（静默模式，不显示错误）
             if (!response.isSpecialPage) {
+                // 普通页面，预加载页面上下文（静默模式，不显示错误）
                 requestPageContext(true); // true 表示静默模式
+            } else {
+                // 特殊页面（PDF等），清除缓存的页面上下文
+                state.pageContext = '';
+                state.pageTitle = '';
+                state.pageUrl = '';
             }
         }
     } catch (error) {
         updatePageContextAvailability(false);
+        // 清除缓存
+        state.pageContext = '';
+        state.pageTitle = '';
+        state.pageUrl = '';
     }
 }
 
@@ -727,7 +736,11 @@ function setupMessageListener() {
                 break;
                 
             case 'PAGE_CONTEXT_ERROR':
-                // 获取页面上下文失败
+                // 获取页面上下文失败，禁用按钮
+                updatePageContextAvailability(false);
+                state.pageContext = '';
+                state.pageTitle = '';
+                state.pageUrl = '';
                 if (state.pageContextReject) {
                     state.pageContextReject();
                     state.pageContextReject = null;
@@ -798,14 +811,20 @@ async function sendMessage() {
     }
 
     // 如果开启了附带页面，确保有页面上下文
-    if (state.includePageContext) {
-        // 如果已经有缓存的页面上下文，直接使用
+    if (state.includePageContext && !elements.includePageContext.disabled) {
+        // 按钮可用且已勾选，尝试获取页面上下文
         if (!state.pageContext) {
             // 没有缓存，重新请求
             const gotContext = await requestPageContext();
             if (!gotContext || !state.pageContext) {
-                showToast('无法获取页面内容，请确保页面已完全加载', 'error');
-                return;
+                // 获取失败，禁用按钮
+                updatePageContextAvailability(false);
+                // 如果没有其他内容可发送，提示并返回
+                if (!userInput && !hasAttachments && !hasPendingSelection) {
+                    showToast('无法获取页面内容', 'error');
+                    return;
+                }
+                // 否则继续发送其他内容（不包含页面上下文）
             }
         }
     }
