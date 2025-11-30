@@ -1,38 +1,7 @@
 // Content Script - 监听网页上的文本选择和页面上下文
 (function() {
-  // 检测当前页面是否为 PDF
-  function isPDFPage() {
-    // 检查 URL 是否以 .pdf 结尾
-    if (window.location.href.toLowerCase().endsWith('.pdf')) {
-      return true;
-    }
-    // 检查 Content-Type（通过 embed 或 object 标签）
-    const embedPdf = document.querySelector('embed[type="application/pdf"]');
-    const objectPdf = document.querySelector('object[type="application/pdf"]');
-    if (embedPdf || objectPdf) {
-      return true;
-    }
-    // Chrome 内置 PDF 查看器的特征
-    if (document.body && document.body.children.length === 1) {
-      const child = document.body.children[0];
-      if (child.tagName === 'EMBED' && child.type === 'application/pdf') {
-        return true;
-      }
-    }
-    // Firefox PDF.js 查看器
-    if (document.getElementById('viewer') && document.querySelector('.pdfViewer')) {
-      return true;
-    }
-    return false;
-  }
-
   // 获取页面主要文本内容
   function getPageContent() {
-    // 如果是 PDF 页面，返回提示信息
-    if (isPDFPage()) {
-      return '[当前页面是 PDF 文件，无法直接提取文本内容。如需分析 PDF，请使用上传功能将 PDF 文件发送给 AI。]';
-    }
-    
     // 尝试获取主要内容区域的多种选择器
     const mainSelectors = [
       'article',
@@ -105,7 +74,8 @@
   // 监听来自 background script 的消息
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'GET_SELECTION') {
-      sendResponse({ text: window.getSelection().toString().trim() });
+      const text = window.getSelection()?.toString().trim() || '';
+      sendResponse({ text });
     }
     if (message.type === 'GET_PAGE_CONTEXT') {
       // 发送页面上下文到侧边栏
@@ -143,29 +113,4 @@
       }).catch(() => {}); // 忽略错误（侧边栏可能未打开）
     }
   });
-
-  // 页面加载完成后自动发送上下文
-  if (document.readyState === 'complete') {
-    setTimeout(() => {
-      chrome.runtime.sendMessage({
-        type: 'PAGE_CONTEXT',
-        content: getPageContent(),
-        title: document.title,
-        url: window.location.href
-      });
-    }, 1000);
-  } else {
-    window.addEventListener('load', () => {
-      setTimeout(() => {
-        chrome.runtime.sendMessage({
-          type: 'PAGE_CONTEXT',
-          content: getPageContent(),
-          title: document.title,
-          url: window.location.href
-        });
-      }, 1000);
-    });
-  }
-
-  console.log('LLM 助手: Content script 已加载');
 })();

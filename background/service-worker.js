@@ -3,8 +3,6 @@
 
 // 当扩展安装或更新时
 chrome.runtime.onInstalled.addListener(() => {
-  console.log('LLM 助手已安装');
-  
   // 创建右键菜单 - 选中文本
   chrome.contextMenus.create({
     id: 'send-to-llm',
@@ -19,6 +17,35 @@ chrome.runtime.onInstalled.addListener(() => {
     contexts: ['image']
   });
 });
+
+// 检测 URL 是否为特殊文件（PDF、本地文件等）
+function isSpecialPage(url) {
+  if (!url) return true;
+  
+  // 检查是否为特殊协议
+  if (url.startsWith('chrome://') || 
+      url.startsWith('chrome-extension://') ||
+      url.startsWith('edge://') ||
+      url.startsWith('about:') ||
+      url.startsWith('file://') ||
+      url.startsWith('view-source:') ||
+      url.startsWith('devtools://')) {
+    return true;
+  }
+  
+  // 检查是否为 PDF 文件
+  try {
+    const urlObj = new URL(url);
+    const pathname = urlObj.pathname.toLowerCase();
+    if (pathname.endsWith('.pdf')) {
+      return true;
+    }
+  } catch (e) {
+    return true;
+  }
+  
+  return false;
+}
 
 // 点击扩展图标时打开侧边栏
 chrome.action.onClicked.addListener((tab) => {
@@ -131,8 +158,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           try {
             await chrome.tabs.sendMessage(tabs[0].id, { type: 'GET_PAGE_CONTEXT' });
           } catch (error) {
-            console.log('无法获取页面上下文:', error);
+            // 通知侧边栏获取失败
+            chrome.runtime.sendMessage({
+              type: 'PAGE_CONTEXT_ERROR',
+              error: error.message
+            }).catch(() => {});
           }
+        } else {
+          // 没有活动标签页
+          chrome.runtime.sendMessage({
+            type: 'PAGE_CONTEXT_ERROR',
+            error: '没有活动标签页'
+          }).catch(() => {});
         }
       });
       break;
@@ -149,6 +186,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           } catch (error) {
             sendResponse({ text: '' });
           }
+        }
+      });
+      return true; // 保持消息通道开放
+    
+    case 'CHECK_PAGE_STATUS':
+      // 侧边栏请求检查当前页面状态
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs[0]) {
+          const isSpecial = isSpecialPage(tabs[0].url);
+          sendResponse({ 
+            isSpecialPage: isSpecial, 
+            url: tabs[0].url 
+          });
+        } else {
+          sendResponse({ isSpecialPage: true, url: '' });
         }
       });
       return true; // 保持消息通道开放

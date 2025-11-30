@@ -60,6 +60,7 @@ let state = {
     isLoading: false,
     attachmentIdCounter: 0, // 附件ID计数器
     pageContextResolve: null, // 等待页面上下文的 Promise resolve
+    pageContextReject: null, // 等待页面上下文的 Promise reject（错误时调用）
     pendingSelection: null // 待发送的选中文本（用户在网页选择但未手动确认的）
 };
 
@@ -93,9 +94,68 @@ async function init() {
     await loadSettings();
     setupEventListeners();
     setupMessageListener();
+    setupTabListener(); // 监听标签页变化
     updateModelOptions();
-    // 请求获取当前页面上下文
-    setTimeout(requestPageContext, 500);
+    // 检查当前页面状态
+    await checkCurrentPageStatus();
+    // 初始化发送按钮状态
+    updateSendButtonState();
+}
+
+// 监听标签页变化（实时检测）
+function setupTabListener() {
+    // 标签页切换
+    chrome.tabs.onActivated.addListener(() => {
+        checkCurrentPageStatus();
+    });
+    
+    // 标签页 URL 变化
+    chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+        if (changeInfo.url || changeInfo.status === 'complete') {
+            // 检查是否为当前活动标签页
+            chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+                if (tabs[0]?.id === tabId) {
+                    checkCurrentPageStatus();
+                }
+            });
+        }
+    });
+}
+
+// 检查当前页面状态
+async function checkCurrentPageStatus() {
+    try {
+        const response = await chrome.runtime.sendMessage({ type: 'CHECK_PAGE_STATUS' });
+        if (response) {
+            updatePageContextAvailability(!response.isSpecialPage);
+            // 如果是普通页面，预加载页面上下文（静默模式，不显示错误）
+            if (!response.isSpecialPage) {
+                requestPageContext(true); // true 表示静默模式
+            }
+        }
+    } catch (error) {
+        updatePageContextAvailability(false);
+    }
+}
+
+// 更新附带页面选项的可用状态
+function updatePageContextAvailability(available) {
+    const toggleBtn = elements.includePageContext.parentElement;
+    if (available) {
+        // 页面上下文可用
+        elements.includePageContext.disabled = false;
+        toggleBtn.classList.remove('disabled');
+        toggleBtn.title = '附带当前页面内容';
+    } else {
+        // 页面上下文不可用（PDF、本地文件等）
+        // 只禁用，不改变勾选状态
+        elements.includePageContext.disabled = true;
+        toggleBtn.classList.add('disabled');
+        toggleBtn.title = '当前页面无法获取内容（PDF、本地文件或浏览器内部页面）';
+    }
+    if (!state.isLoading) {
+        updateSendButtonState();
+    }
 }
 
 // 加载设置
@@ -224,6 +284,7 @@ function setupEventListeners() {
     elements.messageInput.addEventListener('input', () => {
         elements.messageInput.style.height = 'auto';
         elements.messageInput.style.height = Math.min(elements.messageInput.scrollHeight, 120) + 'px';
+        updateSendButtonState();
     });
 
     // 清空对话
@@ -232,7 +293,22 @@ function setupEventListeners() {
     // 页面上下文开关
     elements.includePageContext.addEventListener('change', (e) => {
         state.includePageContext = e.target.checked;
+        updateSendButtonState();
     });
+}
+
+// 更新发送按钮状态
+function updateSendButtonState() {
+    const userInput = elements.messageInput.value.trim();
+    const hasAttachments = state.attachments.length > 0;
+    const hasPendingSelection = !!state.pendingSelection;
+    const hasPageContext = state.includePageContext && !elements.includePageContext.disabled;
+    
+    const canSend = userInput || hasAttachments || hasPendingSelection || hasPageContext;
+    
+    elements.sendBtn.disabled = !canSend || state.isLoading;
+    elements.sendBtn.style.opacity = (!canSend || state.isLoading) ? '0.5' : '1';
+    elements.sendBtn.style.cursor = (!canSend || state.isLoading) ? 'not-allowed' : 'pointer';
 }
 
 // 显示待发送的选中文本提示
@@ -244,12 +320,16 @@ function showPendingSelection() {
     elements.pendingSelectionText.textContent = `已选中: "${preview}"`;
     elements.pendingSelectionBar.classList.remove('hidden');
     updateAttachmentsBarPosition();
+    updateSendButtonState();
 }
 
 // 隐藏待发送的选中文本提示
 function hidePendingSelection() {
     elements.pendingSelectionBar.classList.add('hidden');
     updateAttachmentsBarPosition();
+    if (!state.isLoading) {
+        updateSendButtonState();
+    }
 }
 
 // 更新附件列表的位置
@@ -269,18 +349,25 @@ function addAttachment(attachment) {
     attachment.id = generateAttachmentId();
     state.attachments.push(attachment);
     renderAttachments();
+    updateSendButtonState();
 }
 
 // 删除附件
 function removeAttachment(id) {
     state.attachments = state.attachments.filter(a => a.id !== id);
     renderAttachments();
+    if (!state.isLoading) {
+        updateSendButtonState();
+    }
 }
 
 // 清除所有附件
 function clearAllAttachments() {
     state.attachments = [];
     renderAttachments();
+    if (!state.isLoading) {
+        updateSendButtonState();
+    }
 }
 
 // 渲染附件列表
@@ -369,10 +456,8 @@ function renderAttachments() {
 
 // 文本预览（侧栏弹窗）
 function previewText(id) {
-    console.log('previewText called with id:', id);
     const numId = typeof id === 'string' ? parseInt(id) : id;
     const att = state.attachments.find(a => a.id === numId);
-    console.log('Found attachment:', att);
     if (att && att.type === 'text') {
         showPreviewModal('text', att.content, '选中文本');
     }
@@ -380,10 +465,8 @@ function previewText(id) {
 
 // 文本文件预览（侧栏弹窗）
 function previewFile(id) {
-    console.log('previewFile called with id:', id);
     const numId = typeof id === 'string' ? parseInt(id) : id;
     const att = state.attachments.find(a => a.id === numId);
-    console.log('Found attachment:', att);
     if (att && att.type === 'file') {
         showPreviewModal('text', att.content, att.name);
     }
@@ -391,10 +474,8 @@ function previewFile(id) {
 
 // 图片预览（侧栏弹窗）
 function previewImage(id) {
-    console.log('previewImage called with id:', id);
     const numId = typeof id === 'string' ? parseInt(id) : id;
     const att = state.attachments.find(a => a.id === numId);
-    console.log('Found attachment:', att);
     if (att && att.type === 'image') {
         showPreviewModal('image', att.base64, att.name);
     }
@@ -402,34 +483,15 @@ function previewImage(id) {
 
 // PDF 预览（新标签页）
 function previewPdf(id) {
-    console.log('previewPdf called with id:', id);
     const numId = typeof id === 'string' ? parseInt(id) : id;
     const att = state.attachments.find(a => a.id === numId);
-    console.log('Found attachment:', att);
     if (att && att.type === 'pdf') {
-        // 将 base64 转换为 Blob URL 并在新标签页打开
-        try {
-            const base64Data = att.base64.includes(',') ? att.base64.split(',')[1] : att.base64;
-            const byteCharacters = atob(base64Data);
-            const byteNumbers = new Array(byteCharacters.length);
-            for (let i = 0; i < byteCharacters.length; i++) {
-                byteNumbers[i] = byteCharacters.charCodeAt(i);
-            }
-            const byteArray = new Uint8Array(byteNumbers);
-            const blob = new Blob([byteArray], { type: 'application/pdf' });
-            const blobUrl = URL.createObjectURL(blob);
-            window.open(blobUrl, '_blank');
-        } catch (e) {
-            console.error('PDF preview error:', e);
-            showToast('无法预览 PDF', 'error');
-        }
+        openPdfFromBase64(att.base64);
     }
 }
 
 // 显示预览弹窗
 function showPreviewModal(type, content, title) {
-    console.log('showPreviewModal called:', type, title);
-
     // 移除已存在的弹窗
     const existingModal = document.querySelector('.preview-modal');
     if (existingModal) {
@@ -481,25 +543,6 @@ function closePreviewModal() {
     const modal = document.querySelector('.preview-modal');
     if (modal) {
         modal.remove();
-    }
-}
-
-// 直接从 base64 打开 PDF（不通过 id 查找）
-function openPdfFromBase64Direct(base64Data) {
-    try {
-        const pureBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
-        const byteCharacters = atob(pureBase64);
-        const byteNumbers = new Array(byteCharacters.length);
-        for (let i = 0; i < byteCharacters.length; i++) {
-            byteNumbers[i] = byteCharacters.charCodeAt(i);
-        }
-        const byteArray = new Uint8Array(byteNumbers);
-        const blob = new Blob([byteArray], { type: 'application/pdf' });
-        const blobUrl = URL.createObjectURL(blob);
-        window.open(blobUrl, '_blank');
-    } catch (e) {
-        console.error('PDF preview error:', e);
-        showToast('无法预览 PDF', 'error');
     }
 }
 
@@ -633,76 +676,104 @@ function handlePaste(e) {
 // 监听来自 content script 的消息
 function setupMessageListener() {
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-        if (message.type === 'SELECTED_TEXT') {
-            // 右键菜单发送的文本，直接添加为附件
-            addAttachment({
-                type: 'text',
-                content: message.text,
-                name: 'selected-text'
-            });
-        }
-        if (message.type === 'SELECTION_CHANGED') {
-            // 用户在网页选择了新文本，替换待发送的选中内容
-            if (message.text && message.text.trim()) {
-                state.pendingSelection = message.text.trim();
-                showPendingSelection();
-            } else {
-                state.pendingSelection = null;
-                hidePendingSelection();
-            }
-        }
-        if (message.type === 'PAGE_CONTEXT') {
-            state.pageContext = message.content;
-            state.pageTitle = message.title;
-            state.pageUrl = message.url;
-            console.log('收到页面上下文:', state.pageTitle, '内容长度:', state.pageContext?.length);
-            // 通知等待中的 Promise
-            if (state.pageContextResolve) {
-                state.pageContextResolve(true);
-                state.pageContextResolve = null;
-            }
-        }
-        if (message.type === 'IMAGE_FROM_PAGE') {
-            // 接收从网页右键发送的图片
-            const { imageData } = message;
-            addAttachment({
-                type: 'image',
-                base64: imageData.base64,
-                mimeType: imageData.mimeType,
-                name: imageData.name
-            });
-            showToast('图片已添加');
-        }
-        if (message.type === 'TRIGGER_SEND') {
-            // 网页端按 Ctrl+Enter 触发发送
-            sendMessage();
+        switch (message.type) {
+            case 'SELECTED_TEXT':
+                // 右键菜单发送的文本，直接添加为附件
+                addAttachment({
+                    type: 'text',
+                    content: message.text,
+                    name: 'selected-text'
+                });
+                break;
+                
+            case 'SELECTION_CHANGED':
+                // 用户在网页选择了新文本，替换待发送的选中内容
+                if (message.text && message.text.trim()) {
+                    state.pendingSelection = message.text.trim();
+                    showPendingSelection();
+                } else {
+                    state.pendingSelection = null;
+                    hidePendingSelection();
+                }
+                break;
+                
+            case 'PAGE_CONTEXT':
+                state.pageContext = message.content;
+                state.pageTitle = message.title;
+                state.pageUrl = message.url;
+                // 更新附带页面选项的可用状态
+                updatePageContextAvailability(true);
+                // 通知等待中的 Promise
+                if (state.pageContextResolve) {
+                    state.pageContextResolve(true);
+                    state.pageContextResolve = null;
+                }
+                break;
+                
+            case 'IMAGE_FROM_PAGE':
+                // 接收从网页右键发送的图片
+                addAttachment({
+                    type: 'image',
+                    base64: message.imageData.base64,
+                    mimeType: message.imageData.mimeType,
+                    name: message.imageData.name
+                });
+                showToast('图片已添加');
+                break;
+                
+            case 'TRIGGER_SEND':
+                // 网页端按 Ctrl+Enter 触发发送
+                sendMessage();
+                break;
+                
+            case 'PAGE_CONTEXT_ERROR':
+                // 获取页面上下文失败
+                if (state.pageContextReject) {
+                    state.pageContextReject();
+                    state.pageContextReject = null;
+                }
+                break;
         }
     });
 }
 
 // 请求获取页面上下文（返回 Promise）
-async function requestPageContext() {
+// silent: 静默模式，不会在失败时触发其他操作
+async function requestPageContext(silent = false) {
+    // 如果已经有请求在进行中，静默模式直接返回
+    if (state.pageContextResolve && silent) {
+        return Promise.resolve(!!state.pageContext);
+    }
+    
     return new Promise((resolve) => {
-        // 设置超时
+        // 设置超时（增加到 5 秒）
         const timeout = setTimeout(() => {
-            console.log('获取页面上下文超时');
             state.pageContextResolve = null;
+            state.pageContextReject = null;
             resolve(false);
-        }, 3000);
+        }, 5000);
         
         // 保存 resolve 函数供消息监听器调用
         state.pageContextResolve = (success) => {
             clearTimeout(timeout);
+            state.pageContextReject = null;
             resolve(success);
+        };
+        
+        // 保存 reject 函数供错误处理（仅非静默模式）
+        state.pageContextReject = silent ? null : () => {
+            clearTimeout(timeout);
+            state.pageContextResolve = null;
+            resolve(false);
         };
         
         try {
             // 通过 background script 获取页面上下文
             chrome.runtime.sendMessage({ type: 'REQUEST_PAGE_CONTEXT' });
         } catch (error) {
-            console.log('无法获取页面上下文:', error);
             clearTimeout(timeout);
             state.pageContextResolve = null;
+            state.pageContextReject = null;
             resolve(false);
         }
     });
@@ -712,10 +783,12 @@ async function requestPageContext() {
 async function sendMessage() {
     const userInput = elements.messageInput.value.trim();
 
-    // 检查是否有内容可发送（包括待发送的选中文本）
+    // 检查是否有内容可发送（包括待发送的选中文本、附件、或勾选了附带页面）
     const hasAttachments = state.attachments.length > 0;
     const hasPendingSelection = !!state.pendingSelection;
-    if (!userInput && !hasAttachments && !hasPendingSelection) return;
+    const hasPageContext = state.includePageContext && !elements.includePageContext.disabled;
+    
+    if (!userInput && !hasAttachments && !hasPendingSelection && !hasPageContext) return;
     if (state.isLoading) return;
 
     // 检查 API Key
@@ -724,12 +797,16 @@ async function sendMessage() {
         return;
     }
 
-    // 如果开启了附带页面，刷新获取最新页面上下文
+    // 如果开启了附带页面，确保有页面上下文
     if (state.includePageContext) {
-        const gotContext = await requestPageContext();
-        if (!gotContext || !state.pageContext) {
-            showToast('无法获取页面内容，请确保页面已完全加载', 'error');
-            return;
+        // 如果已经有缓存的页面上下文，直接使用
+        if (!state.pageContext) {
+            // 没有缓存，重新请求
+            const gotContext = await requestPageContext();
+            if (!gotContext || !state.pageContext) {
+                showToast('无法获取页面内容，请确保页面已完全加载', 'error');
+                return;
+            }
         }
     }
 
@@ -790,7 +867,8 @@ async function sendMessage() {
     if (textContent) {
         content = `${contextPrefix}${textContent}\n\n【用户的问题】\n${userInput || '请帮我分析这些内容'}`;
     } else if (contextPrefix) {
-        content = `${contextPrefix}【用户的问题】\n${userInput}`;
+        // 只有页面上下文时，如果没有用户输入，默认请求总结页面
+        content = `${contextPrefix}【用户的问题】\n${userInput || '请帮我总结这个页面的主要内容'}`;
     }
 
     // 使用页面上下文后自动取消勾选
@@ -813,7 +891,7 @@ async function sendMessage() {
 
     // 显示加载状态
     state.isLoading = true;
-    elements.sendBtn.disabled = true;
+    updateSendButtonState();
     const typingEl = showTypingIndicator();
 
     try {
@@ -825,7 +903,7 @@ async function sendMessage() {
         addMessage('error', `错误: ${error.message}`);
     } finally {
         state.isLoading = false;
-        elements.sendBtn.disabled = false;
+        updateSendButtonState();
     }
 }
 
@@ -1203,7 +1281,7 @@ function renderMessage(message) {
     msgEl.querySelectorAll('.msg-preview-pdf').forEach(el => {
         el.addEventListener('click', () => {
             const base64 = el.dataset.base64;
-            openPdfFromBase64Direct(base64);
+            openPdfFromBase64(base64);
         });
     });
 
@@ -1428,18 +1506,7 @@ function showToast(message, type = 'success') {
     }, 2000);
 }
 
-// 直接显示预览弹窗（用于历史消息中的附件）
-function showPreviewModalDirect(type, content, title) {
-    showPreviewModal(type, content, title);
-}
-
-// 从编码内容显示文本预览（用于历史消息中的选中文本）
-function showPreviewModalFromEncoded(encodedContent) {
-    const content = decodeURIComponent(encodedContent);
-    showPreviewModal('text', content, '选中文本');
-}
-
-// 从 base64 打开 PDF（用于历史消息中的 PDF）
+// 从 base64 打开 PDF
 function openPdfFromBase64(base64Data) {
     try {
         const pureBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
@@ -1456,17 +1523,6 @@ function openPdfFromBase64(base64Data) {
         showToast('无法预览 PDF', 'error');
     }
 }
-
-// 暴露全局函数供 onclick 使用
-window.removeAttachment = removeAttachment;
-window.previewText = previewText;
-window.previewImage = previewImage;
-window.previewPdf = previewPdf;
-window.closePreviewModal = closePreviewModal;
-window.showPreviewModal = showPreviewModal;
-window.showPreviewModalDirect = showPreviewModalDirect;
-window.showPreviewModalFromEncoded = showPreviewModalFromEncoded;
-window.openPdfFromBase64 = openPdfFromBase64;
 
 // 初始化
 init();

@@ -362,40 +362,6 @@ body {
   margin-bottom: 8px;
 }
 
-/* 保留旧样式兼容 */
-.selected-text-bar {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 12px 16px;
-  background: #fff3e0;
-  border-bottom: 1px solid #ffcc80;
-}
-
-.selected-text-bar.hidden {
-  display: none;
-}
-
-.selected-text-content {
-  flex: 1;
-  min-width: 0;
-}
-
-.selected-text-content .label {
-  font-size: 12px;
-  color: #e65100;
-  font-weight: 500;
-}
-
-.selected-text-content p {
-  margin-top: 4px;
-  font-size: 13px;
-  color: var(--text-color);
-  max-height: 60px;
-  overflow-y: auto;
-  word-break: break-word;
-}
-
 /* Chat Container */
 .chat-container {
   position: relative;
@@ -796,37 +762,60 @@ code.math-inline {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-top: 8px;
+  margin-top: 4px;
   padding: 0 4px;
 }
 
-/* 页面上下文开关 */
-.context-toggle {
-  display: flex;
-  align-items: center;
-  gap: 4px;
+/* 页面上下文开关 - 按钮样式 */
+.context-toggle-btn {
+  display: inline-block;
   cursor: pointer;
   user-select: none;
 }
 
-.context-toggle input[type="checkbox"] {
-  width: 14px;
-  height: 14px;
-  cursor: pointer;
-  accent-color: var(--primary-color);
+.context-toggle-btn input[type="checkbox"] {
+  display: none;
 }
 
-.context-toggle .toggle-label {
+.context-toggle-btn .toggle-btn-inner {
+  display: inline-block;
   font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: none;
+  background: none;
   color: var(--text-secondary);
+  transition: all 0.2s ease;
 }
 
-.context-toggle:hover .toggle-label {
+.context-toggle-btn:hover .toggle-btn-inner {
+  background: rgba(0, 0, 0, 0.05);
   color: var(--text-color);
 }
 
-.context-toggle input[type="checkbox"]:checked + .toggle-label {
-  color: var(--primary-color);
+.context-toggle-btn input[type="checkbox"]:checked + .toggle-btn-inner {
+  background: var(--primary-color);
+  color: white;
+}
+
+/* 禁用状态 */
+.context-toggle-btn.disabled {
+  cursor: not-allowed;
+}
+
+.context-toggle-btn.disabled .toggle-btn-inner {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.context-toggle-btn.disabled input[type="checkbox"]:checked + .toggle-btn-inner {
+  background: var(--border-color);
+  color: white;
+}
+
+.context-toggle-btn.disabled:hover .toggle-btn-inner {
+  background: none;
+  color: var(--text-secondary);
 }
 
 .text-btn {
