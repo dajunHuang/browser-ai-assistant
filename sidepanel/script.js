@@ -2,13 +2,13 @@
 const DEFAULT_SYSTEM_PROMPT = `你是一个智能助手，正在帮助用户阅读和理解网页内容。
 
 你的职责：
-1. 根据提供的页面上下文和用户选中的文本，准确回答用户的问题
-2. 如果用户选中了文本，优先围绕选中内容进行分析、解释、翻译或总结
-3. 回答要简洁明了, 保持回答结构清晰但不过度格式化，使用段落形式而非过多的列表嵌套
-4. 如果页面内容不足以回答问题，请诚实说明并提供你所知道的相关信息
-5. 对于代码片段，提供清晰的解释；对于外语内容，提供准确的翻译
-
-请用中文回答，除非用户要求使用其他语言。`;
+1. 不要超过 400 字的回答长度
+2. 根据提供的页面上下文和用户选中的文本，或发送的图片等文件，准确回答用户的问题
+3. 如果用户选中了文本，优先围绕选中内容进行分析、解释或总结
+4. 回答要简洁明了, 保持回答结构清晰但不过度格式化，使用段落形式而非过多的列表嵌套
+5. 如果页面内容不足以回答问题，请诚实说明并提供你所知道的相关信息
+6. 对于代码片段，提供清晰的解释；
+7. 请用中文回答，除非用户要求使用其他语言。`;
 
 // LLM 提供商配置
 const PROVIDERS = {
@@ -176,13 +176,11 @@ async function loadSettings() {
             state.settings = { ...state.settings, ...result.settings };
             elements.providerSelect.value = state.settings.provider;
             elements.apiKeyInput.value = state.settings.apiKey;
-            elements.systemPrompt.value = state.settings.systemPrompt || '';
+            elements.systemPrompt.value = state.settings.systemPrompt || DEFAULT_SYSTEM_PROMPT;
             updateModelOptions();
             elements.modelSelect.value = state.settings.model;
-        }
-
-        // 如果没有保存的系统提示词，使用默认提示词作为value（可编辑）
-        if (!result.systemPrompt) {
+        } else {
+            // 首次使用，输入框显示默认提示词
             elements.systemPrompt.value = DEFAULT_SYSTEM_PROMPT;
         }
 
