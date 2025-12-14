@@ -977,7 +977,9 @@ async function callLLMAPIStreaming(userMessage, fileAttachments, msgEl) {
     const { provider, apiKey, model, systemPrompt } = state.settings;
     const effectiveSystemPrompt = systemPrompt || DEFAULT_SYSTEM_PROMPT;
     
-    const history = state.messages.slice(-10).map(m => ({
+    // 排除最后一条消息（当前正在发送的消息），因为它会作为 userMessage 单独传递
+    const historyMessages = state.messages.length > 0 ? state.messages.slice(0, -1) : [];
+    const history = historyMessages.slice(-10).map(m => ({
         role: m.role === 'user' ? 'user' : 'assistant',
         content: m.content
     }));
@@ -1002,7 +1004,9 @@ async function callLLMAPI(userMessage, fileAttachments = []) {
     const effectiveSystemPrompt = systemPrompt || DEFAULT_SYSTEM_PROMPT;
 
     // 构建历史消息（不包含文件，避免过大）
-    const history = state.messages.slice(-10).map(m => ({
+    // 排除最后一条消息（当前正在发送的消息），因为它会作为 userMessage 单独传递
+    const historyMessages = state.messages.length > 0 ? state.messages.slice(0, -1) : [];
+    const history = historyMessages.slice(-10).map(m => ({
         role: m.role === 'user' ? 'user' : 'assistant',
         content: m.content
     }));
