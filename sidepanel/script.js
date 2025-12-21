@@ -16,6 +16,7 @@ const PROVIDERS = {
         name: 'Google Gemini',
         models: [
             { id: 'gemini-3-pro-preview', name: 'Gemini 3 Pro Preview' },
+            { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash Preview' },
             { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro' },
             { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash' },
             { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash Lite' }
@@ -1765,6 +1766,9 @@ async function clearChat() {
       <p>你可以开始新的对话了。</p>
     </div>
   `;
+
+    // 更新发送按钮状态
+    updateSendButtonState();
 }
 
 // 显示提示
