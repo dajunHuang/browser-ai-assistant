@@ -936,13 +936,13 @@ function createStreamingMessage() {
     if (welcomeMsg) {
         welcomeMsg.remove();
     }
-    
+
     const msgEl = document.createElement('div');
     msgEl.className = 'message assistant';
     msgEl.innerHTML = '<div class="message-content"><span class="streaming-cursor">▊</span></div>';
     msgEl.dataset.rawContent = '';
     elements.chatContainer.appendChild(msgEl);
-    scrollToBottom();
+    scrollToBottom(true); // 创建新消息时强制滚动
     return msgEl;
 }
 
@@ -951,7 +951,7 @@ function updateStreamingMessage(msgEl, content) {
     msgEl.dataset.rawContent = content;
     const contentEl = msgEl.querySelector('.message-content');
     contentEl.innerHTML = formatContent(content) + '<span class="streaming-cursor">▊</span>';
-    scrollToBottom();
+    scrollToBottom(); // 智能滚动，只在用户已在底部时滚动
 }
 
 // 完成流式消息
@@ -1469,7 +1469,7 @@ function addMessage(role, content, attachments = null) {
     }
 
     renderMessage(message);
-    scrollToBottom();
+    scrollToBottom(true); // 添加新消息时强制滚动
 }
 
 // 渲染所有消息
@@ -1481,7 +1481,7 @@ function renderMessages() {
     }
 
     state.messages.forEach(msg => renderMessage(msg));
-    scrollToBottom();
+    scrollToBottom(true); // 渲染历史消息时强制滚动到底部
 }
 
 // 渲染单条消息
@@ -1735,7 +1735,7 @@ function showTypingIndicator() {
     typingEl.className = 'message assistant typing-indicator';
     typingEl.innerHTML = '<span></span><span></span><span></span>';
     elements.chatContainer.appendChild(typingEl);
-    scrollToBottom();
+    scrollToBottom(true); // 显示加载指示器时强制滚动
     return typingEl;
 }
 
@@ -1746,9 +1746,25 @@ function removeTypingIndicator(el) {
     }
 }
 
-// 滚动到底部
-function scrollToBottom() {
-    elements.chatContainer.scrollTop = elements.chatContainer.scrollHeight;
+// 智能滚动：只有当用户已经在底部时才自动滚动
+function scrollToBottom(force = false) {
+    const container = elements.chatContainer;
+
+    // 如果是强制滚动，直接滚动到底部
+    if (force) {
+        container.scrollTop = container.scrollHeight;
+        return;
+    }
+
+    // 判断用户是否在底部
+    // 使用 Math.abs 和更大的容差(200px)来处理快速内容增长的情况
+    const scrollBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    const isNearBottom = scrollBottom <= 200;
+
+    // 只有在底部时才滚动
+    if (isNearBottom) {
+        container.scrollTop = container.scrollHeight;
+    }
 }
 
 // 清空对话
