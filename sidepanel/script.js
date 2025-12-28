@@ -1759,7 +1759,7 @@ function scrollToBottom(force = false) {
     // 判断用户是否在底部
     // 使用 Math.abs 和更大的容差(200px)来处理快速内容增长的情况
     const scrollBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
-    const isNearBottom = scrollBottom <= 200;
+    const isNearBottom = scrollBottom <= 100;
 
     // 只有在底部时才滚动
     if (isNearBottom) {
