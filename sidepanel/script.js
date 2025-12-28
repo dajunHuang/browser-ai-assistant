@@ -951,7 +951,7 @@ function updateStreamingMessage(msgEl, content) {
     msgEl.dataset.rawContent = content;
     const contentEl = msgEl.querySelector('.message-content');
     contentEl.innerHTML = formatContent(content) + '<span class="streaming-cursor">▊</span>';
-    scrollToBottom(); // 智能滚动，只在用户已在底部时滚动
+    scrollToBottom(false, msgEl); // 智能滚动，传递消息元素以检查是否在可视区域
 }
 
 // 完成流式消息
@@ -1747,7 +1747,7 @@ function removeTypingIndicator(el) {
 }
 
 // 智能滚动：只有当用户已经在底部时才自动滚动
-function scrollToBottom(force = false) {
+function scrollToBottom(force = false, currentMessageEl = null) {
     const container = elements.chatContainer;
 
     // 如果是强制滚动，直接滚动到底部
@@ -1756,10 +1756,22 @@ function scrollToBottom(force = false) {
         return;
     }
 
+    // 如果提供了当前消息元素，检查消息开头是否还在可视区域内
+    if (currentMessageEl) {
+        const msgRect = currentMessageEl.getBoundingClientRect();
+        const containerRect = container.getBoundingClientRect();
+
+        // 如果消息的顶部距离容器顶部小于60px（留出标签和内边距的空间），停止自动滚动
+        // 这样可以避免第一行内容被"LLM智能助手"标签遮挡
+        if (msgRect.top - containerRect.top < 25) {
+            return;
+        }
+    }
+
     // 判断用户是否在底部
-    // 使用 Math.abs 和更大的容差(200px)来处理快速内容增长的情况
+    // 使用更大的容差(200px)来处理快速内容增长的情况
     const scrollBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
-    const isNearBottom = scrollBottom <= 100;
+    const isNearBottom = scrollBottom <= 200;
 
     // 只有在底部时才滚动
     if (isNearBottom) {
