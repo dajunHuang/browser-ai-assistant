@@ -62,7 +62,11 @@ let state = {
     attachmentIdCounter: 0, // 附件ID计数器
     pageContextResolve: null, // 等待页面上下文的 Promise resolve
     pageContextReject: null, // 等待页面上下文的 Promise reject（错误时调用）
-    pendingSelection: null // 待发送的选中文本（用户在网页选择但未手动确认的）
+    pendingSelection: null, // 待发送的选中文本（用户在网页选择但未手动确认的）
+    abortController: null, // 用于中止 API 请求
+    lastUserMessage: null, // 保存最后发送的用户消息内容（用于取消后恢复）
+    lastUserAttachments: null, // 保存最后发送的附件（用于取消后恢复）
+    streamingMessageElement: null // 当前流式输出的消息元素
 };
 
 // DOM 元素
@@ -270,8 +274,14 @@ function setupEventListeners() {
     // 支持粘贴图片
     elements.messageInput.addEventListener('paste', handlePaste);
 
-    // 发送消息
-    elements.sendBtn.addEventListener('click', sendMessage);
+    // 发送消息或取消
+    elements.sendBtn.addEventListener('click', () => {
+        if (state.isLoading) {
+            cancelMessage();
+        } else {
+            sendMessage();
+        }
+    });
 
     // 输入框聚焦时：Enter 发送，Shift+Enter 换行
     elements.messageInput.addEventListener('keydown', (e) => {
@@ -308,16 +318,28 @@ function setupEventListeners() {
 
 // 更新发送按钮状态
 function updateSendButtonState() {
-    const userInput = elements.messageInput.value.trim();
-    const hasAttachments = state.attachments.length > 0;
-    const hasPendingSelection = !!state.pendingSelection;
-    const hasPageContext = state.includePageContext && !elements.includePageContext.disabled;
-    
-    const canSend = userInput || hasAttachments || hasPendingSelection || hasPageContext;
-    
-    elements.sendBtn.disabled = !canSend || state.isLoading;
-    elements.sendBtn.style.opacity = (!canSend || state.isLoading) ? '0.5' : '1';
-    elements.sendBtn.style.cursor = (!canSend || state.isLoading) ? 'not-allowed' : 'pointer';
+    if (state.isLoading) {
+        // 加载中：显示取消按钮
+        elements.sendBtn.innerHTML = '✕';
+        elements.sendBtn.disabled = false;
+        elements.sendBtn.style.opacity = '1';
+        elements.sendBtn.style.cursor = 'pointer';
+        elements.sendBtn.title = '取消回复';
+    } else {
+        // 非加载中：显示发送按钮
+        elements.sendBtn.innerHTML = '➤';
+        const userInput = elements.messageInput.value.trim();
+        const hasAttachments = state.attachments.length > 0;
+        const hasPendingSelection = !!state.pendingSelection;
+        const hasPageContext = state.includePageContext && !elements.includePageContext.disabled;
+
+        const canSend = userInput || hasAttachments || hasPendingSelection || hasPageContext;
+
+        elements.sendBtn.disabled = !canSend;
+        elements.sendBtn.style.opacity = canSend ? '1' : '0.5';
+        elements.sendBtn.style.cursor = canSend ? 'pointer' : 'not-allowed';
+        elements.sendBtn.title = '发送消息 (Enter)';
+    }
 }
 
 // 显示待发送的选中文本提示
@@ -899,6 +921,10 @@ async function sendMessage() {
     // 收集所有文件附件（图片和 PDF）
     const fileAttachments = allAttachments.filter(a => a.type === 'image' || a.type === 'pdf');
 
+    // 保存原始输入，用于取消时恢复
+    state.lastUserMessage = userInput;
+    state.lastUserAttachments = [...allAttachments];
+
     // 清除附件
     const attachmentsCopy = [...allAttachments];
     clearAllAttachments();
@@ -908,12 +934,16 @@ async function sendMessage() {
     elements.messageInput.value = '';
     elements.messageInput.style.height = 'auto';
 
+    // 创建 AbortController 用于取消请求
+    state.abortController = new AbortController();
+
     // 显示加载状态
     state.isLoading = true;
     updateSendButtonState();
-    
+
     // 创建助手消息元素用于流式输出
     const assistantMsgEl = createStreamingMessage();
+    state.streamingMessageElement = assistantMsgEl;
 
     try {
         await callLLMAPIStreaming(content, fileAttachments, assistantMsgEl);
@@ -921,12 +951,76 @@ async function sendMessage() {
         const finalContent = assistantMsgEl.dataset.rawContent || '';
         saveAssistantMessage(finalContent);
     } catch (error) {
-        assistantMsgEl.querySelector('.message-content').innerHTML = 
+        // 检查是否是用户取消
+        if (error.name === 'AbortError') {
+            // 用户取消，不显示错误
+            return;
+        }
+        assistantMsgEl.querySelector('.message-content').innerHTML =
             `<span style="color: var(--error-color)">错误: ${escapeHtml(error.message)}</span>`;
     } finally {
         state.isLoading = false;
+        state.abortController = null;
+        state.streamingMessageElement = null;
         updateSendButtonState();
     }
+}
+
+// 取消正在进行的消息发送
+function cancelMessage() {
+    if (!state.isLoading) return;
+
+    // 中止 API 请求
+    if (state.abortController) {
+        state.abortController.abort();
+    }
+
+    // 移除流式输出的助手消息元素
+    if (state.streamingMessageElement) {
+        state.streamingMessageElement.remove();
+    }
+
+    // 从消息历史中移除最后一条用户消息
+    if (state.messages.length > 0 && state.messages[state.messages.length - 1].role === 'user') {
+        state.messages.pop();
+        chrome.storage.local.set({ messages: state.messages });
+    }
+
+    // 移除聊天容器中最后一条用户消息的 DOM 元素
+    const userMessages = elements.chatContainer.querySelectorAll('.message.user');
+    if (userMessages.length > 0) {
+        userMessages[userMessages.length - 1].remove();
+    }
+
+    // 恢复输入框内容
+    if (state.lastUserMessage) {
+        elements.messageInput.value = state.lastUserMessage;
+        // 自动调整高度
+        elements.messageInput.style.height = 'auto';
+        elements.messageInput.style.height = elements.messageInput.scrollHeight + 'px';
+        // 光标移至末尾
+        elements.messageInput.focus();
+        elements.messageInput.setSelectionRange(
+            elements.messageInput.value.length,
+            elements.messageInput.value.length
+        );
+    }
+
+    // 恢复附件
+    if (state.lastUserAttachments && state.lastUserAttachments.length > 0) {
+        state.attachments = [...state.lastUserAttachments];
+        renderAttachments();
+    }
+
+    // 清理状态
+    state.isLoading = false;
+    state.abortController = null;
+    state.streamingMessageElement = null;
+    state.lastUserMessage = null;
+    state.lastUserAttachments = null;
+
+    // 更新按钮状态
+    updateSendButtonState();
 }
 
 // 创建流式输出的消息元素
@@ -1246,7 +1340,8 @@ async function callGeminiStreaming(apiKey, model, userMessage, history, systemPr
         body: JSON.stringify({
             contents,
             generationConfig: { temperature: 0.7, maxOutputTokens: 8192 }
-        })
+        }),
+        signal: state.abortController?.signal
     });
 
     if (!response.ok) {
@@ -1323,7 +1418,8 @@ async function callOpenAIStreaming(apiKey, model, userMessage, history, systemPr
             temperature: 0.7,
             max_tokens: 4096,
             stream: true
-        })
+        }),
+        signal: state.abortController?.signal
     });
 
     if (!response.ok) {
@@ -1402,7 +1498,8 @@ async function callAnthropicStreaming(apiKey, model, userMessage, history, syste
             system: systemPrompt || undefined,
             messages,
             stream: true
-        })
+        }),
+        signal: state.abortController?.signal
     });
 
     if (!response.ok) {
