@@ -19,7 +19,7 @@ chrome.runtime.onInstalled.addListener(() => {
 });
 
 // 检测 URL 是否为特殊文件（PDF、本地文件等）
-function isSpecialPage(url) {
+function isSpecialPage(url: string | undefined): boolean {
   if (!url) return true;
   
   // 检查是否为特殊协议
@@ -48,12 +48,12 @@ function isSpecialPage(url) {
 }
 
 // 点击扩展图标时打开侧边栏
-chrome.action.onClicked.addListener((tab) => {
-  chrome.sidePanel.open({ tabId: tab.id });
-});
+chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(console.error);
 
 // 监听右键菜单点击
 chrome.contextMenus.onClicked.addListener((info, tab) => {
+  if (!tab || !tab.id) return;
+
   if (info.menuItemId === 'send-to-llm' && info.selectionText) {
     // 打开侧边栏
     chrome.sidePanel.open({ tabId: tab.id });
@@ -85,8 +85,14 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   }
 });
 
+interface ImageData {
+    base64: string;
+    mimeType: string;
+    name: string;
+}
+
 // 获取图片并转换为 base64
-async function fetchImageAsBase64(url) {
+async function fetchImageAsBase64(url: string): Promise<ImageData | null> {
   try {
     const response = await fetch(url);
     const blob = await response.blob();
@@ -95,9 +101,9 @@ async function fetchImageAsBase64(url) {
       const reader = new FileReader();
       reader.onloadend = () => {
         resolve({
-          base64: reader.result,
+          base64: reader.result as string,
           mimeType: blob.type || 'image/png',
-          name: url.split('/').pop().split('?')[0] || 'image'
+          name: url.split('/').pop()?.split('?')[0] || 'image'
         });
       };
       reader.onerror = reject;
@@ -113,7 +119,7 @@ async function fetchImageAsBase64(url) {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   switch (message.type) {
     case 'OPEN_SIDEPANEL':
-      if (sender.tab) {
+      if (sender.tab && sender.tab.id) {
         chrome.sidePanel.open({ tabId: sender.tab.id });
       }
       break;
@@ -161,7 +167,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             // 通知侧边栏获取失败
             chrome.runtime.sendMessage({
               type: 'PAGE_CONTEXT_ERROR',
-              error: error.message
+              error: (error as Error).message
             }).catch(() => {});
           }
         } else {
@@ -177,7 +183,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     case 'GET_CURRENT_TAB_SELECTION':
       // 获取当前标签页的选中文本
       chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
-        if (tabs[0]) {
+        if (tabs[0] && tabs[0].id) {
           try {
             const response = await chrome.tabs.sendMessage(tabs[0].id, {
               type: 'GET_SELECTION'
@@ -206,6 +212,3 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true; // 保持消息通道开放
   }
 });
-
-// 启用侧边栏
-chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });

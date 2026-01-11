@@ -1,7 +1,7 @@
 // Content Script - 监听网页上的文本选择和页面上下文
 (function() {
   // 获取页面主要文本内容
-  function getPageContent() {
+  function getPageContent(): string {
     // 尝试获取主要内容区域的多种选择器
     const mainSelectors = [
       'article',
@@ -20,14 +20,14 @@
       '.page-content'
     ];
     
-    let mainElement = null;
+    let mainElement: Element | null = null;
     let maxTextLength = 0;
     
     // 找到文本内容最多的主要区域
     for (const selector of mainSelectors) {
       const el = document.querySelector(selector);
       if (el) {
-        const textLen = (el.innerText || '').length;
+        const textLen = ((el as HTMLElement).innerText || '').length;
         if (textLen > maxTextLength) {
           maxTextLength = textLen;
           mainElement = el;
@@ -39,7 +39,7 @@
     const contentElement = (mainElement && maxTextLength > 500) ? mainElement : document.body;
     
     // 获取文本内容，排除脚本和样式
-    const clone = contentElement.cloneNode(true);
+    const clone = contentElement.cloneNode(true) as HTMLElement;
     
     // 移除不需要的元素
     const removeSelectors = [
@@ -72,7 +72,7 @@
   }
 
   // 监听来自 background script 的消息
-  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message.type === 'GET_SELECTION') {
       const text = window.getSelection()?.toString().trim() || '';
       sendResponse({ text });
@@ -89,11 +89,11 @@
   });
 
   // 监听选择变化，自动准备选中文本
-  let selectionTimeout = null;
+  let selectionTimeout: number | null = null;
   document.addEventListener('selectionchange', () => {
     // 防抖处理
-    clearTimeout(selectionTimeout);
-    selectionTimeout = setTimeout(() => {
+    if (selectionTimeout) clearTimeout(selectionTimeout);
+    selectionTimeout = window.setTimeout(() => {
       const selection = window.getSelection();
       const text = selection ? selection.toString().trim() : '';
       // 发送选择变化消息到侧边栏

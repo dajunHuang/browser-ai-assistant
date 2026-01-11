@@ -1,9 +1,10 @@
-import { state } from './state.js';
-import { updateStreamingMessage, finalizeStreamingMessage } from './ui.js';
-import { DEFAULT_SYSTEM_PROMPT } from './config.js';
+import { state } from './state';
+import { updateStreamingMessage, finalizeStreamingMessage } from './ui';
+import { DEFAULT_SYSTEM_PROMPT } from './config';
+import { Attachment } from './types';
 
 // 调用 LLM API - 流式输出
-export async function callLLMAPIStreaming(userMessage, fileAttachments, msgEl) {
+export async function callLLMAPIStreaming(userMessage: string, fileAttachments: Attachment[], msgEl: HTMLElement): Promise<string> {
     const { provider, apiKeys, model, systemPrompt } = state.settings;
     const apiKey = apiKeys[provider];
     const effectiveSystemPrompt = systemPrompt || DEFAULT_SYSTEM_PROMPT;
@@ -30,7 +31,7 @@ export async function callLLMAPIStreaming(userMessage, fileAttachments, msgEl) {
 }
 
 // Gemini 流式 API
-async function callGeminiStreaming(apiKey, model, userMessage, history, systemPrompt, fileAttachments, msgEl) {
+async function callGeminiStreaming(apiKey: string, model: string, userMessage: string, history: any[], systemPrompt: string, fileAttachments: Attachment[], msgEl: HTMLElement): Promise<string> {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?key=${apiKey}&alt=sse`;
 
     const contents = [];
@@ -46,8 +47,10 @@ async function callGeminiStreaming(apiKey, model, userMessage, history, systemPr
 
     const currentParts = [];
     for (const file of fileAttachments) {
-        const base64Data = file.base64.split(',')[1];
-        currentParts.push({ inline_data: { mime_type: file.mimeType, data: base64Data } });
+        if (file.base64) {
+            const base64Data = file.base64.split(',')[1];
+            currentParts.push({ inline_data: { mime_type: file.mimeType, data: base64Data } });
+        }
     }
     currentParts.push({ text: userMessage });
     contents.push({ role: 'user', parts: currentParts });
@@ -67,7 +70,8 @@ async function callGeminiStreaming(apiKey, model, userMessage, history, systemPr
         throw new Error(error.error?.message || `API 错误: ${response.status}`);
     }
 
-    const reader = response.body.getReader();
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error('Response body is null');
     const decoder = new TextDecoder();
     let fullContent = '';
 
@@ -97,7 +101,7 @@ async function callGeminiStreaming(apiKey, model, userMessage, history, systemPr
 }
 
 // OpenAI 流式 API
-async function callOpenAIStreaming(apiKey, model, userMessage, history, systemPrompt, fileAttachments, msgEl) {
+async function callOpenAIStreaming(apiKey: string, model: string, userMessage: string, history: any[], systemPrompt: string, fileAttachments: Attachment[], msgEl: HTMLElement): Promise<string> {
     const messages = [];
     if (systemPrompt) {
         messages.push({ role: 'system', content: systemPrompt });
@@ -108,9 +112,11 @@ async function callOpenAIStreaming(apiKey, model, userMessage, history, systemPr
     const pdfs = fileAttachments.filter(f => f.type === 'pdf');
 
     if (images.length > 0) {
-        const content = [];
+        const content: any[] = [];
         images.forEach(img => {
-            content.push({ type: 'image_url', image_url: { url: img.base64 } });
+            if (img.base64) {
+                content.push({ type: 'image_url', image_url: { url: img.base64 } });
+            }
         });
         let text = userMessage;
         if (pdfs.length > 0) {
@@ -145,7 +151,8 @@ async function callOpenAIStreaming(apiKey, model, userMessage, history, systemPr
         throw new Error(error.error?.message || `API 错误: ${response.status}`);
     }
 
-    const reader = response.body.getReader();
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error('Response body is null');
     const decoder = new TextDecoder();
     let fullContent = '';
 
@@ -175,19 +182,21 @@ async function callOpenAIStreaming(apiKey, model, userMessage, history, systemPr
 }
 
 // Anthropic 流式 API
-async function callAnthropicStreaming(apiKey, model, userMessage, history, systemPrompt, fileAttachments, msgEl) {
+async function callAnthropicStreaming(apiKey: string, model: string, userMessage: string, history: any[], systemPrompt: string, fileAttachments: Attachment[], msgEl: HTMLElement): Promise<string> {
     const images = fileAttachments.filter(f => f.type === 'image');
     const pdfs = fileAttachments.filter(f => f.type === 'pdf');
 
-    let currentContent;
+    let currentContent: any;
     if (images.length > 0) {
         currentContent = [];
         images.forEach(img => {
-            const base64Data = img.base64.split(',')[1];
-            currentContent.push({
-                type: 'image',
-                source: { type: 'base64', media_type: img.mimeType, data: base64Data }
-            });
+            if (img.base64) {
+                const base64Data = img.base64.split(',')[1];
+                currentContent.push({
+                    type: 'image',
+                    source: { type: 'base64', media_type: img.mimeType, data: base64Data }
+                });
+            }
         });
         let text = userMessage;
         if (pdfs.length > 0) {
@@ -225,7 +234,8 @@ async function callAnthropicStreaming(apiKey, model, userMessage, history, syste
         throw new Error(error.error?.message || `API 错误: ${response.status}`);
     }
 
-    const reader = response.body.getReader();
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error('Response body is null');
     const decoder = new TextDecoder();
     let fullContent = '';
 
@@ -257,15 +267,13 @@ async function callAnthropicStreaming(apiKey, model, userMessage, history, syste
 }
 
 // DeepSeek 流式 API (OpenAI Compatible)
-async function callDeepSeekStreaming(apiKey, model, userMessage, history, systemPrompt, fileAttachments, msgEl) {
+async function callDeepSeekStreaming(apiKey: string, model: string, userMessage: string, history: any[], systemPrompt: string, fileAttachments: Attachment[], msgEl: HTMLElement): Promise<string> {
     const messages = [];
     if (systemPrompt) {
         messages.push({ role: 'system', content: systemPrompt });
     }
     messages.push(...history);
 
-    // DeepSeek 目前主要支持文本，图片/PDF 处理同 OpenAI (忽略 PDF，图片视模型而定，这里简单处理为仅文本)
-    // DeepSeek V3/R1 支持程度不同，暂时只传文本
     const pdfs = fileAttachments.filter(f => f.type === 'pdf');
     const images = fileAttachments.filter(f => f.type === 'image');
     
@@ -284,7 +292,7 @@ async function callDeepSeekStreaming(apiKey, model, userMessage, history, system
         body: JSON.stringify({
             model,
             messages,
-            temperature: model === 'deepseek-reasoner' ? undefined : 0.7, // R1 不建议设置 temperature
+            temperature: model === 'deepseek-reasoner' ? undefined : 0.7, 
             stream: true
         }),
         signal: state.abortController?.signal
@@ -295,7 +303,8 @@ async function callDeepSeekStreaming(apiKey, model, userMessage, history, system
         throw new Error(error.error?.message || `API 错误: ${response.status}`);
     }
 
-    const reader = response.body.getReader();
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error('Response body is null');
     const decoder = new TextDecoder();
     let fullContent = '';
     let isThinking = false;
@@ -313,14 +322,11 @@ async function callDeepSeekStreaming(apiKey, model, userMessage, history, system
                     const data = JSON.parse(line.slice(6));
                     const delta = data.choices?.[0]?.delta;
                     
-                    // 处理思维链内容 (DeepSeek R1)
                     if (delta?.reasoning_content) {
                         if (!isThinking) {
                             fullContent += '> **深度思考中...**\n\n';
                             isThinking = true;
                         }
-                        // 暂时不展示具体思考过程，或者可以选择展示
-                        // fullContent += delta.reasoning_content; 
                     } else if (delta?.content) {
                         fullContent += delta.content;
                         updateStreamingMessage(msgEl, fullContent);

@@ -1,3 +1,5 @@
+import { Providers } from './types';
+
 // 默认系统提示词
 export const DEFAULT_SYSTEM_PROMPT = `你是一个智能助手，正在帮助用户阅读和理解网页内容。
 
@@ -11,14 +13,18 @@ export const DEFAULT_SYSTEM_PROMPT = `你是一个智能助手，正在帮助用
 7. 请用中文回答，除非用户要求使用其他语言。`;
 
 // LLM 提供商配置
-export const PROVIDERS = {
+export const PROVIDERS: Providers = {
     gemini: {
         name: 'Google Gemini',
         models: [
-            { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash Proview' },
-            { id: 'gemini-3-pro-preview', name: 'Gemini 3 Pro Preview' }
+            { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash Preview' },
+            { id: 'gemini-3-pro-preview', name: 'Gemini 3 Pro Preview' },
+            { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash' },
+            { id: 'gemini-2.0-flash-lite-preview-02-05', name: 'Gemini 2.0 Flash Lite' },
+            { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro' },
+            { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash' }
         ],
-        endpoint: 'https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent'
+        endpoint: 'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent'
     },
     openai: {
         name: 'OpenAI',

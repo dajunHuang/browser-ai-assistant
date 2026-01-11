@@ -1,7 +1,33 @@
-// 工具函数
+declare const marked: any;
+declare const katex: any;
+
+// 显示提示
+export function showToast(message: string, type: 'success' | 'error' = 'success'): void {
+    const toast = document.createElement('div');
+    toast.style.cssText = `
+    position: fixed;
+    top: 60px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 10px 20px;
+    background: ${type === 'error' ? '#d93025' : '#0f9d58'};
+    color: white;
+    border-radius: 8px;
+    font-size: 14px;
+    z-index: 1000;
+    animation: fadeIn 0.3s ease;
+  `;
+    toast.textContent = message;
+    document.body.appendChild(toast);
+
+    setTimeout(() => {
+        toast.style.animation = 'fadeOut 0.3s ease';
+        setTimeout(() => toast.remove(), 300);
+    }, 2000);
+}
 
 // HTML 转义
-export function escapeHtml(text) {
+export function escapeHtml(text: string): string {
     if (!text) return '';
     return text
         .replace(/&/g, '&amp;')
@@ -12,7 +38,7 @@ export function escapeHtml(text) {
 }
 
 // 判断是否为文本文件
-export function isTextFile(file) {
+export function isTextFile(file: File): boolean {
     // 常见文本文件 MIME 类型
     const textMimeTypes = [
         'text/plain',
@@ -62,20 +88,22 @@ export function isTextFile(file) {
 }
 
 // 格式化内容 - 使用 marked 渲染 Markdown，KaTeX 渲染公式
-export function formatContent(content) {
+export function formatContent(content: string): string {
+    if (!content) return '';
+    
     // 保护数学公式，避免被 marked 处理
-    const mathBlocks = [];
-    const mathInlines = [];
+    const mathBlocks: string[] = [];
+    const mathInlines: string[] = [];
     
     // 保护块级公式 $$...$$
-    let formatted = content.replace(/\$\$([\s\S]*?)\$\$/g, (match, formula) => {
+    let formatted = content.replace(/\$\$([\s\S]*?)\$\$/g, (_match, formula) => {
         const idx = mathBlocks.length;
         mathBlocks.push(formula.trim());
         return `%%MATH_BLOCK_${idx}%%`;
     });
     
     // 保护行内公式 $...$
-    formatted = formatted.replace(/\$([^\$\n]+?)\$/g, (match, formula) => {
+    formatted = formatted.replace(/\$([^\$\n]+?)\$/g, (_match, formula) => {
         const idx = mathInlines.length;
         mathInlines.push(formula.trim());
         return `%%MATH_INLINE_${idx}%%`;
@@ -90,7 +118,7 @@ export function formatContent(content) {
     }
     
     // 恢复块级公式 - 使用 KaTeX 渲染
-    formatted = formatted.replace(/%%MATH_BLOCK_(\d+)%%/g, (match, idx) => {
+    formatted = formatted.replace(/%%MATH_BLOCK_(\d+)%%/g, (_match, idx) => {
         const formula = mathBlocks[parseInt(idx)];
         try {
             if (typeof katex !== 'undefined') {
@@ -108,7 +136,7 @@ export function formatContent(content) {
     });
     
     // 恢复行内公式 - 使用 KaTeX 渲染
-    formatted = formatted.replace(/%%MATH_INLINE_(\d+)%%/g, (match, idx) => {
+    formatted = formatted.replace(/%%MATH_INLINE_(\d+)%%/g, (_match, idx) => {
         const formula = mathInlines[parseInt(idx)];
         try {
             if (typeof katex !== 'undefined') {
@@ -129,17 +157,11 @@ export function formatContent(content) {
 }
 
 // 解析用户消息，提取选中文本和问题
-export function parseUserMessage(content) {
-    const result = {
+export function parseUserMessage(content: string): { selectedText: string | null; question: string } {
+    const result: { selectedText: string | null; question: string } = {
         selectedText: null,
         question: content
     };
-
-    // 提取选中文本（多段）
-    const selectedMatches = content.match(/【选中文本 \d+】\n([\s\S]*?)(?=\n\n【|$)/g);
-    if (selectedMatches) {
-        // 已经在 attachments 中处理，这里不重复显示
-    }
 
     // 提取选中文本（旧格式）
     const selectedMatch = content.match(/【用户选中的文本】\n([\s\S]*?)(?=\n\n【用户的问题】|$)/);
@@ -160,7 +182,7 @@ export function parseUserMessage(content) {
 }
 
 // 从 base64 打开 PDF
-export function openPdfFromBase64(base64Data) {
+export function openPdfFromBase64(base64Data: string): void {
     try {
         const pureBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
         const byteCharacters = atob(pureBase64);
@@ -175,29 +197,4 @@ export function openPdfFromBase64(base64Data) {
     } catch (e) {
         showToast('无法预览 PDF', 'error');
     }
-}
-
-// 显示提示
-export function showToast(message, type = 'success') {
-    const toast = document.createElement('div');
-    toast.style.cssText = `
-    position: fixed;
-    top: 60px;
-    left: 50%;
-    transform: translateX(-50%);
-    padding: 10px 20px;
-    background: ${type === 'error' ? '#d93025' : '#0f9d58'};
-    color: white;
-    border-radius: 8px;
-    font-size: 14px;
-    z-index: 1000;
-    animation: fadeIn 0.3s ease;
-  `;
-    toast.textContent = message;
-    document.body.appendChild(toast);
-
-    setTimeout(() => {
-        toast.style.animation = 'fadeOut 0.3s ease';
-        setTimeout(() => toast.remove(), 300);
-    }, 2000);
 }

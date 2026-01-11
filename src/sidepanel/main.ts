@@ -1,14 +1,15 @@
-import { state } from './state.js';
-import { PROVIDERS, DEFAULT_SYSTEM_PROMPT } from './config.js';
+import { state } from './state';
+import { PROVIDERS, DEFAULT_SYSTEM_PROMPT } from './config';
 import { 
     initElements, elements, updateSendButtonState, 
     renderMessages, renderMessage, renderAttachments, 
     showPendingSelection, hidePendingSelection,
     createStreamingMessage, updatePageContextAvailability, clearChatUI,
     closePreviewModal, showPreviewModal, updateAttachmentsBarPosition
-} from './ui.js';
-import { isTextFile, escapeHtml, formatContent, showToast, openPdfFromBase64 } from './utils.js';
-import { callLLMAPIStreaming } from './api.js';
+} from './ui';
+import { isTextFile, escapeHtml, formatContent, showToast, openPdfFromBase64 } from './utils';
+import { callLLMAPIStreaming } from './api';
+import { Attachment } from './types';
 
 // 初始化
 async function init() {
@@ -79,9 +80,9 @@ async function loadSettings() {
             state.settings = { ...state.settings, ...result.settings };
             
             // 数据迁移：如果存在旧的 apiKey 且 apiKeys 为空（或对应 provider 为空），则迁移
-            if (result.settings.apiKey && (!state.settings.apiKeys || !state.settings.apiKeys[state.settings.provider])) {
-                if (!state.settings.apiKeys) state.settings.apiKeys = {};
-                state.settings.apiKeys[state.settings.provider] = result.settings.apiKey;
+            if ((result.settings as any).apiKey && (!state.settings.apiKeys || !state.settings.apiKeys[state.settings.provider])) {
+                if (!state.settings.apiKeys) state.settings.apiKeys = {} as any;
+                state.settings.apiKeys[state.settings.provider] = (result.settings as any).apiKey;
             }
             
             // 确保 apiKeys 对象存在
@@ -94,14 +95,14 @@ async function loadSettings() {
                 };
             }
 
-            elements.providerSelect.value = state.settings.provider;
-            elements.apiKeyInput.value = state.settings.apiKeys[state.settings.provider] || '';
-            elements.systemPrompt.value = state.settings.systemPrompt || DEFAULT_SYSTEM_PROMPT;
+            if (elements.providerSelect) elements.providerSelect.value = state.settings.provider;
+            if (elements.apiKeyInput) elements.apiKeyInput.value = state.settings.apiKeys[state.settings.provider] || '';
+            if (elements.systemPrompt) elements.systemPrompt.value = state.settings.systemPrompt || DEFAULT_SYSTEM_PROMPT;
             updateModelOptions();
-            elements.modelSelect.value = state.settings.model;
+            if (elements.modelSelect) elements.modelSelect.value = state.settings.model;
         } else {
             // 首次使用，输入框显示默认提示词
-            elements.systemPrompt.value = DEFAULT_SYSTEM_PROMPT;
+            if (elements.systemPrompt) elements.systemPrompt.value = DEFAULT_SYSTEM_PROMPT;
         }
 
         if (result.messages && result.messages.length > 0) {
@@ -110,7 +111,7 @@ async function loadSettings() {
         } else {
             // 首次使用或没有消息时，默认勾选附带页面
             state.includePageContext = true;
-            elements.includePageContext.checked = true;
+            if (elements.includePageContext) elements.includePageContext.checked = true;
         }
     } catch (error) {
         console.error('加载设置失败:', error);
@@ -120,19 +121,21 @@ async function loadSettings() {
 // 保存设置
 async function saveSettings() {
     // 保存当前输入框的 API Key 到当前 provider
-    const currentProvider = elements.providerSelect.value;
-    state.settings.apiKeys[currentProvider] = elements.apiKeyInput.value;
+    if (elements.providerSelect && elements.apiKeyInput) {
+        const currentProvider = elements.providerSelect.value;
+        state.settings.apiKeys[currentProvider] = elements.apiKeyInput.value;
+        state.settings.provider = currentProvider;
+    }
 
-    state.settings.provider = currentProvider;
-    state.settings.model = elements.modelSelect.value;
-    state.settings.systemPrompt = elements.systemPrompt.value;
+    if (elements.modelSelect) state.settings.model = elements.modelSelect.value;
+    if (elements.systemPrompt) state.settings.systemPrompt = elements.systemPrompt.value;
 
     // 移除废弃的 apiKey 字段
-    delete state.settings.apiKey;
+    if ((state.settings as any).apiKey) delete (state.settings as any).apiKey;
 
     try {
         await chrome.storage.local.set({ settings: state.settings });
-        elements.settingsPanel.classList.add('hidden');
+        if (elements.settingsPanel) elements.settingsPanel.classList.add('hidden');
         showToast('设置已保存');
     } catch (error) {
         console.error('保存设置失败:', error);
@@ -142,6 +145,7 @@ async function saveSettings() {
 
 // 更新模型选项
 function updateModelOptions() {
+    if (!elements.providerSelect || !elements.modelSelect) return;
     const provider = elements.providerSelect.value;
     const models = PROVIDERS[provider].models;
 
@@ -153,9 +157,6 @@ function updateModelOptions() {
     const currentModelId = state.settings.model;
     const modelExists = models.find(m => m.id === currentModelId);
     
-    // 如果之前选中的模型属于当前提供商，则保持选中；否则选中第一个
-    // 注意：这里有一个逻辑问题，state.settings.model 可能还存着上一个提供商的模型
-    // 所以我们应该检查它是否在当前 list 中
     if (modelExists) {
         elements.modelSelect.value = currentModelId;
     } else {
@@ -167,66 +168,63 @@ function updateModelOptions() {
 // 设置事件监听
 function setupEventListeners() {
     // 设置面板
-    elements.settingsBtn.addEventListener('click', () => {
-        elements.settingsPanel.classList.remove('hidden');
+    elements.settingsBtn?.addEventListener('click', () => {
+        if (elements.settingsPanel) elements.settingsPanel.classList.remove('hidden');
         // 打开面板时，确保显示的 API Key 是当前选择的提供商的
-        const provider = elements.providerSelect.value;
-        elements.apiKeyInput.value = state.settings.apiKeys[provider] || '';
+        if (elements.providerSelect && elements.apiKeyInput) {
+            const provider = elements.providerSelect.value;
+            elements.apiKeyInput.value = state.settings.apiKeys[provider] || '';
+        }
     });
 
-    elements.closeSettings.addEventListener('click', () => {
-        elements.settingsPanel.classList.add('hidden');
+    elements.closeSettings?.addEventListener('click', () => {
+        if (elements.settingsPanel) elements.settingsPanel.classList.add('hidden');
     });
 
-    elements.saveSettings.addEventListener('click', saveSettings);
+    elements.saveSettings?.addEventListener('click', saveSettings);
 
-    elements.providerSelect.addEventListener('change', () => {
-        // 在切换提供商之前，先保存当前输入框的 Key 到内存（state），以免丢失
-        // 注意：这里我们无法知道"上一个"选中的是谁，除非我们在 change 之前记录
-        // 但 simpler approach: 
-        // 每次 input 变化时更新 state? 或者在 change 事件中处理？
-        // 由于 change 事件触发时 value 已经是新的了，我们需要一个变量记录 oldProvider
-        // 或者简单的：假设用户切换前必须保存？不，那样体验不好。
-        
-        // 更好的方案：
-        // providerSelect 的 focus 事件记录旧值？
-        // 或者：每次修改 apiKeyInput，直接同步到 state.settings.apiKeys[currentProvider]
+    elements.providerSelect?.addEventListener('change', () => {
+        // change 事件已经太晚了，之前的值已经没了，所以只负责更新 UI
     });
     
     // 监听 API Key 输入，实时同步到 state
-    elements.apiKeyInput.addEventListener('input', () => {
-        const provider = elements.providerSelect.value;
-        state.settings.apiKeys[provider] = elements.apiKeyInput.value;
+    elements.apiKeyInput?.addEventListener('input', () => {
+        if (elements.providerSelect && elements.apiKeyInput) {
+            const provider = elements.providerSelect.value;
+            state.settings.apiKeys[provider] = elements.apiKeyInput.value;
+        }
     });
 
     // 监听 Provider 切换
-    elements.providerSelect.addEventListener('change', () => {
+    elements.providerSelect?.addEventListener('change', () => {
         updateModelOptions();
-        const provider = elements.providerSelect.value;
-        elements.apiKeyInput.value = state.settings.apiKeys[provider] || '';
+        if (elements.providerSelect && elements.apiKeyInput) {
+            const provider = elements.providerSelect.value;
+            elements.apiKeyInput.value = state.settings.apiKeys[provider] || '';
+        }
     });
 
     // 清除待发送的选中文本
-    elements.clearPendingSelection.addEventListener('click', () => {
+    elements.clearPendingSelection?.addEventListener('click', () => {
         state.pendingSelection = null;
         hidePendingSelection();
     });
 
     // 文件上传（图片和 PDF，支持多选）
-    elements.uploadFileBtn.addEventListener('click', () => {
-        elements.fileInput.click();
+    elements.uploadFileBtn?.addEventListener('click', () => {
+        elements.fileInput?.click();
     });
 
-    elements.fileInput.addEventListener('change', handleFileUpload);
+    elements.fileInput?.addEventListener('change', handleFileUpload);
 
     // 清除所有附件
-    elements.clearAllAttachments.addEventListener('click', clearAllAttachments);
+    elements.clearAllAttachments?.addEventListener('click', clearAllAttachments);
 
     // 支持粘贴图片
-    elements.messageInput.addEventListener('paste', handlePaste);
+    elements.messageInput?.addEventListener('paste', handlePaste);
 
     // 发送消息或取消
-    elements.sendBtn.addEventListener('click', () => {
+    elements.sendBtn?.addEventListener('click', () => {
         if (state.isLoading) {
             cancelMessage();
         } else {
@@ -235,7 +233,7 @@ function setupEventListeners() {
     });
 
     // 输入框聚焦时：Enter 发送，Shift+Enter 换行
-    elements.messageInput.addEventListener('keydown', (e) => {
+    elements.messageInput?.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey) {
             e.preventDefault();
             sendMessage();
@@ -251,18 +249,20 @@ function setupEventListeners() {
     });
 
     // 自动调整输入框高度
-    elements.messageInput.addEventListener('input', () => {
-        elements.messageInput.style.height = 'auto';
-        elements.messageInput.style.height = Math.min(elements.messageInput.scrollHeight, 120) + 'px';
-        updateSendButtonState();
+    elements.messageInput?.addEventListener('input', () => {
+        if (elements.messageInput) {
+            elements.messageInput.style.height = 'auto';
+            elements.messageInput.style.height = Math.min(elements.messageInput.scrollHeight, 120) + 'px';
+            updateSendButtonState();
+        }
     });
 
     // 清空对话
-    elements.clearChatBtn.addEventListener('click', clearChat);
+    elements.clearChatBtn?.addEventListener('click', clearChat);
 
     // 页面上下文开关
-    elements.includePageContext.addEventListener('change', (e) => {
-        state.includePageContext = e.target.checked;
+    elements.includePageContext?.addEventListener('change', (e) => {
+        state.includePageContext = (e.target as HTMLInputElement).checked;
         updateSendButtonState();
     });
 }
@@ -273,7 +273,7 @@ function generateAttachmentId() {
 }
 
 // 添加附件
-function addAttachment(attachment) {
+function addAttachment(attachment: Attachment) {
     attachment.id = generateAttachmentId();
     state.attachments.push(attachment);
     
@@ -289,7 +289,7 @@ function addAttachment(attachment) {
              } else if (type === 'image') {
                  showPreviewModal('image', att.base64, att.name);
              } else if (type === 'pdf') {
-                 openPdfFromBase64(att.base64);
+                 if (att.base64) openPdfFromBase64(att.base64);
              }
         }
     });
@@ -297,7 +297,7 @@ function addAttachment(attachment) {
 }
 
 // 删除附件
-function removeAttachment(id) {
+function removeAttachment(id: number) {
     state.attachments = state.attachments.filter(a => a.id !== id);
     // 重新渲染，保持回调
     renderAttachments({
@@ -311,7 +311,7 @@ function removeAttachment(id) {
              } else if (type === 'image') {
                  showPreviewModal('image', att.base64, att.name);
              } else if (type === 'pdf') {
-                 openPdfFromBase64(att.base64);
+                 if (att.base64) openPdfFromBase64(att.base64);
              }
         }
     });
@@ -330,42 +330,52 @@ function clearAllAttachments() {
 }
 
 // 处理文件上传（支持多文件）
-function handleFileUpload(e) {
-    const files = e.target.files;
+function handleFileUpload(e: Event) {
+    const target = e.target as HTMLInputElement;
+    const files = target.files;
     if (!files || files.length === 0) return;
 
     Array.from(files).forEach(file => {
         if (file.type.startsWith('image/')) {
             const reader = new FileReader();
             reader.onload = (event) => {
-                addAttachment({
-                    type: 'image',
-                    base64: event.target.result,
-                    mimeType: file.type,
-                    name: file.name
-                });
+                if (event.target?.result) {
+                    addAttachment({
+                        id: 0,
+                        type: 'image',
+                        base64: event.target.result as string,
+                        mimeType: file.type,
+                        name: file.name
+                    });
+                }
             };
             reader.readAsDataURL(file);
         } else if (file.type === 'application/pdf') {
             const reader = new FileReader();
             reader.onload = (event) => {
-                addAttachment({
-                    type: 'pdf',
-                    base64: event.target.result,
-                    mimeType: file.type,
-                    name: file.name
-                });
+                if (event.target?.result) {
+                    addAttachment({
+                        id: 0,
+                        type: 'pdf',
+                        base64: event.target.result as string,
+                        mimeType: file.type,
+                        name: file.name
+                    });
+                }
             };
             reader.readAsDataURL(file);
         } else if (isTextFile(file)) {
             const reader = new FileReader();
             reader.onload = (event) => {
-                addAttachment({
-                    type: 'file',
-                    content: event.target.result,
-                    mimeType: file.type || 'text/plain',
-                    name: file.name
-                });
+                if (event.target?.result) {
+                    addAttachment({
+                        id: 0,
+                        type: 'file',
+                        content: event.target.result as string,
+                        mimeType: file.type || 'text/plain',
+                        name: file.name
+                    });
+                }
             };
             reader.readAsText(file);
         } else {
@@ -373,11 +383,11 @@ function handleFileUpload(e) {
         }
     });
 
-    e.target.value = '';
+    target.value = '';
 }
 
 // 处理粘贴图片
-function handlePaste(e) {
+function handlePaste(e: ClipboardEvent) {
     const items = e.clipboardData?.items;
     if (!items) return;
 
@@ -388,12 +398,15 @@ function handlePaste(e) {
             if (file) {
                 const reader = new FileReader();
                 reader.onload = (event) => {
-                    addAttachment({
-                        type: 'image',
-                        base64: event.target.result,
-                        mimeType: file.type,
-                        name: 'pasted-image-' + Date.now()
-                    });
+                    if (event.target?.result) {
+                        addAttachment({
+                            id: 0,
+                            type: 'image',
+                            base64: event.target.result as string,
+                            mimeType: file.type,
+                            name: 'pasted-image-' + Date.now()
+                        });
+                    }
                 };
                 reader.readAsDataURL(file);
             }
@@ -404,10 +417,11 @@ function handlePaste(e) {
 
 // 监听来自 content script 的消息
 function setupMessageListener() {
-    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    chrome.runtime.onMessage.addListener((message, _sender, _sendResponse) => {
         switch (message.type) {
             case 'SELECTED_TEXT':
                 addAttachment({
+                    id: 0,
                     type: 'text',
                     content: message.text,
                     name: 'selected-text'
@@ -437,6 +451,7 @@ function setupMessageListener() {
                 
             case 'IMAGE_FROM_PAGE':
                 addAttachment({
+                    id: 0,
                     type: 'image',
                     base64: message.imageData.base64,
                     mimeType: message.imageData.mimeType,
@@ -464,7 +479,7 @@ function setupMessageListener() {
 }
 
 // 请求获取页面上下文（返回 Promise）
-async function requestPageContext(silent = false) {
+async function requestPageContext(silent = false): Promise<boolean> {
     if (state.pageContextResolve && silent) {
         return Promise.resolve(!!state.pageContext);
     }
@@ -501,11 +516,12 @@ async function requestPageContext(silent = false) {
 
 // 发送消息
 async function sendMessage() {
+    if (!elements.messageInput) return;
     const userInput = elements.messageInput.value.trim();
 
     const hasAttachments = state.attachments.length > 0;
     const hasPendingSelection = !!state.pendingSelection;
-    const hasPageContext = state.includePageContext && !elements.includePageContext.disabled;
+    const hasPageContext = state.includePageContext && elements.includePageContext && !elements.includePageContext.disabled;
     
     if (!userInput && !hasAttachments && !hasPendingSelection && !hasPageContext) return;
     if (state.isLoading) return;
@@ -515,7 +531,7 @@ async function sendMessage() {
         return;
     }
 
-    if (state.includePageContext && !elements.includePageContext.disabled) {
+    if (state.includePageContext && elements.includePageContext && !elements.includePageContext.disabled) {
         if (!state.pageContext) {
             const gotContext = await requestPageContext();
             if (!gotContext || !state.pageContext) {
@@ -528,7 +544,7 @@ async function sendMessage() {
         }
     }
 
-    let pendingSelectionAttachment = null;
+    let pendingSelectionAttachment: Attachment | null = null;
     if (state.pendingSelection) {
         pendingSelectionAttachment = {
             id: generateAttachmentId(),
@@ -581,7 +597,7 @@ async function sendMessage() {
 
     if (state.includePageContext && contextPrefix) {
         state.includePageContext = false;
-        elements.includePageContext.checked = false;
+        if (elements.includePageContext) elements.includePageContext.checked = false;
     }
 
     const fileAttachments = allAttachments.filter(a => a.type === 'image' || a.type === 'pdf');
@@ -593,14 +609,16 @@ async function sendMessage() {
     clearAllAttachments();
 
     // 添加消息（支持多附件）
-    function addMessage(role, content, attachments = null) {
-        let savedAttachments = null;
+    function addMessage(role: 'user' | 'assistant' | 'error', content: string, attachments: Attachment[] | null = null) {
+        let savedAttachments: Attachment[] | null = null;
         if (attachments && attachments.length > 0) {
             savedAttachments = attachments.map(att => ({
+                id: att.id,
                 type: att.type,
                 name: att.name,
-                content: (att.type === 'text' || att.type === 'file') ? att.content : null,
-                base64: att.type === 'image' ? att.base64 : null
+                content: (att.type === 'text' || att.type === 'file') ? att.content : undefined,
+                base64: (att.type === 'image' || att.type === 'pdf') ? att.base64 : undefined,
+                mimeType: att.mimeType
             }));
         }
 
@@ -620,8 +638,10 @@ async function sendMessage() {
     }
     
     addMessage('user', content, attachmentsCopy);
-    elements.messageInput.value = '';
-    elements.messageInput.style.height = 'auto';
+    if (elements.messageInput) {
+        elements.messageInput.value = '';
+        elements.messageInput.style.height = 'auto';
+    }
 
     state.abortController = new AbortController();
     state.isLoading = true;
@@ -636,7 +656,7 @@ async function sendMessage() {
         
         // 保存助手消息
         const message = {
-            role: 'assistant',
+            role: 'assistant' as const,
             content: finalContent,
             timestamp: Date.now(),
             attachments: null
@@ -644,12 +664,14 @@ async function sendMessage() {
         state.messages.push(message);
         chrome.storage.local.set({ messages: state.messages });
 
-    } catch (error) {
+    } catch (error: any) {
         if (error.name === 'AbortError') {
             return;
         }
-        assistantMsgEl.querySelector('.message-content').innerHTML =
-            `<span style="color: var(--error-color)">错误: ${escapeHtml(error.message)}</span>`;
+        const contentEl = assistantMsgEl.querySelector('.message-content');
+        if (contentEl) {
+            contentEl.innerHTML = `<span style="color: var(--error-color)">错误: ${escapeHtml(error.message)}</span>`;
+        }
     } finally {
         state.isLoading = false;
         state.abortController = null;
@@ -675,12 +697,12 @@ function cancelMessage() {
         chrome.storage.local.set({ messages: state.messages });
     }
 
-    const userMessages = elements.chatContainer.querySelectorAll('.message.user');
-    if (userMessages.length > 0) {
+    const userMessages = elements.chatContainer?.querySelectorAll('.message.user');
+    if (userMessages && userMessages.length > 0) {
         userMessages[userMessages.length - 1].remove();
     }
 
-    if (state.lastUserMessage) {
+    if (state.lastUserMessage && elements.messageInput) {
         elements.messageInput.value = state.lastUserMessage;
         elements.messageInput.style.height = 'auto';
         elements.messageInput.style.height = elements.messageInput.scrollHeight + 'px';
@@ -696,13 +718,6 @@ function cancelMessage() {
         // 恢复附件并绑定事件
         renderAttachments({
             onRemove: removeAttachment,
-            onPreview: (type, id) => { /* ... preview logic repeated ... */ }
-        });
-        // 简化起见，这里先调一次 renderAttachments 恢复视觉，具体回调绑定在 addAttachment 里更优
-        // 但这里是恢复，所以需要重新走一遍 add流程或者 render流程
-        // 由于 renderAttachments 依赖 state.attachments，我们已经恢复了 state，只需要调用 render
-        renderAttachments({
-            onRemove: removeAttachment,
             onPreview: (type, id) => {
                  const numId = typeof id === 'string' ? parseInt(id) : id;
                  const att = state.attachments.find(a => a.id === numId);
@@ -712,7 +727,7 @@ function cancelMessage() {
                  } else if (type === 'image') {
                      showPreviewModal('image', att.base64, att.name);
                  } else if (type === 'pdf') {
-                     openPdfFromBase64(att.base64);
+                     if (att.base64) openPdfFromBase64(att.base64);
                  }
             }
         });
@@ -733,7 +748,7 @@ async function clearChat() {
     await chrome.storage.local.set({ messages: [] });
 
     state.includePageContext = true;
-    elements.includePageContext.checked = true;
+    if (elements.includePageContext) elements.includePageContext.checked = true;
 
     clearChatUI();
     updateSendButtonState();
