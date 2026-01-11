@@ -1,202 +1,71 @@
-# AGENTS.md - Development Guide for LLM Assistant Extension
+# AGENTS.md - Developer Guide for LLM Assistant Extension
 
-This document provides guidelines for AI agents working on this browser extension project.
+This document provides instructions for agentic coding agents and developers working on this browser extension.
 
-## Project Overview
+## 🏗️ Project Architecture
 
-A Chrome/Edge browser extension (Manifest V3) that provides an AI assistant sidebar supporting Gemini, OpenAI, and Anthropic APIs. The extension enables users to select text on webpages and send it to LLM APIs for analysis, supports file attachments, and renders Markdown with KaTeX math formulas.
+*   **Type**: Chrome/Edge Browser Extension (Manifest V3)
+*   **Language**: TypeScript
+*   **Build Tool**: Vite + Bun (or npm)
+*   **Structure**:
+    *   `src/background`: Service Worker logic
+    *   `src/content`: Content Scripts (DOM interaction)
+    *   `src/sidepanel`: Main UI logic (Vanilla JS structure with TS)
+    *   `src/lib`: Static libraries (KaTeX, Marked)
+    *   `dist`: Build output directory
 
-## Build, Lint, and Test Commands
+## 🚀 Build Commands
 
-This is a vanilla JavaScript project with no build system. All code runs directly in the browser.
+**Important**: Always run the build command after modifying files in `src/`. The browser loads the `dist/` directory.
 
-### Loading the Extension in Browser
+```bash
+# Install dependencies
+bun install  # or npm install
 
-1. Open Edge/Chrome and navigate to `edge://extensions/` or `chrome://extensions/`
-2. Enable **Developer mode** (toggle in top right)
-3. Click **Load unpacked**
-4. Select the project folder
-5. Reload the extension after making changes
+# Build for production
+bun run build  # or npm run build
 
-### No Build Commands
-
-This project uses vanilla JavaScript with no transpilation or bundling. Changes to JS/CSS files take effect immediately upon extension reload.
-
-### No Test Framework
-
-There are no automated tests. Manual testing is required:
-- Test extension loading in browser
-- Test side panel opens correctly
-- Test text selection and sending
-- Test API connections with valid API keys
-- Test file attachment upload
-- Test Markdown and KaTeX rendering
-
-### No Linting
-
-No ESLint or other linting tools are configured. Code style consistency is maintained manually.
-
-## Code Style Guidelines
-
-### Language
-
-- **Comments**: Use Chinese comments for all functions and complex logic
-- **UI Strings**: Use Chinese text for all user-facing messages
-- **Console Output**: Use Chinese messages for errors and warnings
-
-### Naming Conventions
-
-- **Variables**: camelCase (e.g., `userInput`, `isLoading`)
-- **Constants**: UPPER_SNAKE_CASE for truly constant values (e.g., `DEFAULT_SYSTEM_PROMPT`, `PROVIDERS`)
-- **Functions**: camelCase, verb-first naming (e.g., `sendMessage()`, `loadSettings()`)
-- **State Object**: Use `state` object with camelCase properties (e.g., `state.settings`, `state.messages`)
-- **Elements Object**: Cache DOM elements in `elements` object (e.g., `elements.messageInput`, `elements.sendBtn`)
-
-### File Structure
-
-```
-project-root/
-├── manifest.json              # Extension configuration
-├── background/
-│   └── service-worker.js      # Background service worker (message routing)
-├── content/
-│   ├── content.js             # Content script (selection detection)
-│   └── content.css            # Content script styles
-├── sidepanel/
-│   ├── index.html             # Side panel HTML
-│   ├── styles.css             # Side panel styles
-│   └── script.js              # Side panel UI logic (main logic)
-└── lib/
-    ├── katex/                 # Math formula rendering
-    └── marked.min.js          # Markdown rendering
+# Watch mode (rebuilds on change)
+bun run dev  # or npm run dev
 ```
 
-### JavaScript Patterns
+*Note: When using watch mode, you may still need to click the "Refresh" button in `chrome://extensions` to reload the extension context.*
 
-#### IIFE Pattern
+## 📐 Code Style & Conventions
 
-Wrap content scripts and module code in IIFEs:
+*   **TypeScript**: Strict mode is enabled. Define interfaces for all data structures in `src/sidepanel/types.ts`.
+*   **State Management**: Use the centralized `state` object in `src/sidepanel/state.ts`. Do not store global state loosely.
+*   **UI Components**: The project uses a "Vanilla JS" approach with direct DOM manipulation in `src/sidepanel/ui.ts`.
+    *   Avoid inline HTML strings where complex; use `document.createElement`.
+    *   Use `elements` object to cache DOM references.
+*   **Styling**:
+    *   Use CSS variables in `src/sidepanel/styles.css` for theming.
+    *   Support Light/Dark mode via `@media (prefers-color-scheme: dark)`.
+*   **API Calls**: All LLM API logic resides in `src/sidepanel/api.ts`.
+    *   Streaming logic is handled manually via `fetch` and `TextDecoder` to support diverse APIs (DeepSeek, Gemini, etc.).
 
-```javascript
-(function() {
-  // Code here
-})();
-```
+## 🧪 Testing
 
-#### State Management
+Currently, there are no automated unit tests. Testing is manual:
+1.  Run `bun run build`.
+2.  Reload extension in `chrome://extensions`.
+3.  Test key flows:
+    *   Open Side Panel.
+    *   Set API Key (ensure persistence).
+    *   Send text message.
+    *   Send selected text (Right-click menu).
+    *   Send image/PDF.
 
-Use a centralized `state` object for application state:
+## 🔍 Common Issues
 
-```javascript
-let state = {
-    settings: { provider: 'gemini', apiKey: '', model: '' },
-    messages: [],
-    attachments: [],
-    isLoading: false,
-    // ...
-};
-```
+*   **"ShowToast is not exported"**: Ensure you import utility functions from `./utils` not `./ui`.
+*   **CSS Not Loading**: Check `vite.config.ts` to ensure `styles.css` is being copied to `dist/`.
+*   **DeepSeek/API Errors**: verify `manifest.json` `host_permissions` includes the API endpoint.
 
-#### DOM Element Caching
+## 🤖 Agent Instructions
 
-Cache frequently accessed DOM elements:
-
-```javascript
-const elements = {
-    settingsBtn: document.getElementById('settingsBtn'),
-    messageInput: document.getElementById('messageInput'),
-    sendBtn: document.getElementById('sendBtn'),
-    // ...
-};
-```
-
-#### Event Listener Setup
-
-Use named functions for event listeners:
-
-```javascript
-function setupEventListeners() {
-    elements.settingsBtn.addEventListener('click', openSettings);
-    elements.sendBtn.addEventListener('click', sendMessage);
-}
-```
-
-### Error Handling
-
-- Use try/catch for async operations and file handling
-- Log errors with `console.error()` using Chinese messages
-- Show user-friendly error messages via `showToast(message, 'error')`
-- Handle Chrome API errors gracefully with `.catch(() => {})` for non-critical operations
-
-### Async/Await Pattern
-
-Prefer async/await over callbacks:
-
-```javascript
-async function loadSettings() {
-    try {
-        const result = await chrome.storage.local.get(['settings']);
-        // Handle result
-    } catch (error) {
-        console.error('加载设置失败:', error);
-    }
-}
-```
-
-### Message Passing
-
-Use chrome.runtime message passing for communication between components:
-
-```javascript
-// Send message
-chrome.runtime.sendMessage({ type: 'SELECTED_TEXT', text: content });
-
-// Listen for messages
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    switch (message.type) {
-        case 'SELECTED_TEXT':
-            // Handle
-            break;
-    }
-});
-```
-
-### API Key Security
-
-- API keys are stored in `chrome.storage.local` only
-- Never log or expose API keys in console
-- Validate API key presence before making requests
-
-### CSS Guidelines
-
-- Use CSS variables for theming (see `styles.css`)
-- Use class-based styling with camelCase class names
-- Keep styles in dedicated CSS files (not inline styles except dynamic toasts)
-- Follow existing color scheme and spacing patterns
-
-### Browser API Usage
-
-- Use Manifest V3 APIs only
-- Use `chrome.storage.local` for persistent storage
-- Use `chrome.sidePanel` for side panel management
-- Use `chrome.contextMenus` for right-click menu items
-- Support modern Chrome/Edge browsers (Manifest V3)
-
-### Content Script Isolation
-
-- Content scripts run in web page context
-- Use IIFE to avoid polluting global scope
-- Communicate with background script via message passing
-- Be aware of potential conflicts with page JavaScript
-
-### Internationalization
-
-- All user-facing strings are in Chinese
-- Maintain Chinese consistency throughout (error messages, labels, placeholders)
-
-### Performance Considerations
-
-- Use debouncing for frequent events (e.g., selectionchange: 300ms timeout)
-- Clean up resources on extension reload
-- Limit message history to last 10 messages for API calls
-- Truncate long page content (8000 character limit)
+If you are an AI agent working on this repo:
+1.  **Read First**: Always read `src/sidepanel/state.ts` and `src/sidepanel/types.ts` to understand the data model.
+2.  **Modifying UI**: Check `src/sidepanel/index.html` for ID references before changing `src/sidepanel/ui.ts`.
+3.  **Refactoring**: If adding new files, update `vite.config.ts` if they are new entry points (unlikely for sidepanel logic).
+4.  **Final Step**: ALWAYS run `bun run build` (or instruct the user to do so) after changes.
