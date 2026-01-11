@@ -392,7 +392,7 @@ export function renderMessage(message: Message, index: number = -1): void {
                 const preview = att.content && att.content.length > 100 ? att.content.substring(0, 100) + '...' : att.content;
                 // 聊天记录中的选中文本卡片恢复为纯文本处理
                 innerHTML += `
-          <div class="attachment-card selection-card msg-preview-text" style="cursor:pointer" data-content="${encodeURIComponent(att.content || '')}" title="点击查看完整文本">
+          <div class="attachment-card selection-card msg-preview-text" style="cursor:pointer" data-content="${encodeURIComponent(att.content || '')}" data-name="选中文本" title="点击查看完整文本">
             <div class="card-label">📝 选中文本</div>
             <div class="card-content">${escapeHtml(preview || '')}</div>
           </div>`;
@@ -400,7 +400,7 @@ export function renderMessage(message: Message, index: number = -1): void {
                 const preview = att.content ? (att.content.length > 100 ? att.content.substring(0, 100) + '...' : att.content) : '';
                 // 文件预览恢复为纯文本，并复用 selection-card 样式以保持标题独占一行
                 innerHTML += `
-          <div class="attachment-card file-card selection-card msg-preview-text" style="cursor:pointer" data-content="${encodeURIComponent(att.content || '')}" title="点击查看文件内容">
+          <div class="attachment-card file-card selection-card msg-preview-text" style="cursor:pointer" data-content="${encodeURIComponent(att.content || '')}" data-name="${escapeHtml(att.name || '文件内容')}" title="点击查看文件内容">
             <div class="card-label">📄 ${escapeHtml(att.name || '')}</div>
             <div class="card-content">${escapeHtml(preview || '')}</div>
           </div>`;
@@ -453,7 +453,8 @@ export function renderMessage(message: Message, index: number = -1): void {
     msgEl.querySelectorAll('.msg-preview-text').forEach(el => {
         el.addEventListener('click', () => {
             const content = decodeURIComponent((el as HTMLElement).dataset.content || '');
-            showPreviewModal('text', content, '选中文本');
+            const title = (el as HTMLElement).dataset.name || '选中文本';
+            showPreviewModal('text', content, title);
         });
     });
 }

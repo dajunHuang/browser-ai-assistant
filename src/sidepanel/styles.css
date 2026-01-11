@@ -35,6 +35,29 @@
   --transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg-app: #0f172a;        /* Slate 900 */
+    --bg-surface: #1e293b;    /* Slate 800 */
+    --bg-hover: #334155;      /* Slate 700 */
+    
+    --text-main: #f1f5f9;     /* Slate 100 */
+    --text-secondary: #94a3b8; /* Slate 400 */
+    --text-inverse: #0f172a;  /* Slate 900 (for primary buttons text if needed) */
+    
+    --border-color: #334155;  /* Slate 700 */
+    --border-focus: #818cf8;  /* Indigo 400 */
+    
+    --primary-color: #6366f1; /* Indigo 500 (Brighter for dark mode) */
+    --primary-hover: #818cf8; /* Indigo 400 */
+    --primary-light: rgba(99, 102, 241, 0.15); /* Transparent Indigo */
+    
+    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.3);
+    --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.4), 0 2px 4px -2px rgb(0 0 0 / 0.4);
+    --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.4), 0 4px 6px -4px rgb(0 0 0 / 0.4);
+  }
+}
+
 * {
   box-sizing: border-box;
   margin: 0;
@@ -798,7 +821,7 @@ body {
 }
 
 .settings-header {
-  padding: 16px 20px;
+  padding: 12px 20px; /* Reduced from 16px */
   border-bottom: 1px solid var(--border-color);
   display: flex;
   justify-content: space-between;
@@ -825,13 +848,13 @@ body {
 }
 
 .settings-body {
-  padding: 20px;
+  padding: 16px 20px; /* Reduced vertical padding */
   overflow-y: auto;
   flex: 1;
 }
 
 .form-group {
-  margin-bottom: 20px;
+  margin-bottom: 16px; /* Reduced from 20px */
 }
 
 .form-group label {
@@ -850,7 +873,7 @@ body {
 .form-group select,
 .form-group textarea {
   width: 100%;
-  padding: 10px 12px;
+  padding: 8px 12px; /* Slightly reduced padding */
   background: var(--bg-app);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-sm);
@@ -889,7 +912,7 @@ body {
 }
 
 .settings-footer {
-  padding: 16px 20px;
+  padding: 12px 20px; /* Reduced from 16px */
   border-top: 1px solid var(--border-color);
   display: flex;
   justify-content: flex-end;
