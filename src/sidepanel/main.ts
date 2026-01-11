@@ -265,6 +265,59 @@ function setupEventListeners() {
         state.includePageContext = (e.target as HTMLInputElement).checked;
         updateSendButtonState();
     });
+
+    // 聊天消息操作监听 (事件委托)
+    setupChatActionListeners();
+}
+
+// 设置聊天消息操作监听
+function setupChatActionListeners() {
+    if (!elements.chatContainer) return;
+
+    elements.chatContainer.addEventListener('click', (e) => {
+        const target = (e.target as HTMLElement).closest('.action-btn');
+        if (!target) return;
+
+        const btn = target as HTMLElement;
+        const action = btn.dataset.action;
+        const indexStr = btn.dataset.index;
+
+        if (!action || indexStr === undefined) return;
+        const index = parseInt(indexStr, 10);
+        if (isNaN(index)) return;
+
+        if (action === 'delete') {
+            handleDeleteMessage(index);
+        } else if (action === 'restore') {
+            handleRestoreCheckpoint(index);
+        }
+    });
+}
+
+// 删除单条消息（及随后的助手回复）
+async function handleDeleteMessage(index: number) {
+    if (index < 0 || index >= state.messages.length) return;
+
+    // 确认要删除的消息数量
+    // 如果下一条是助手消息，也一起删除
+    let deleteCount = 1;
+    if (index + 1 < state.messages.length && state.messages[index + 1].role === 'assistant') {
+        deleteCount = 2;
+    }
+
+    state.messages.splice(index, deleteCount);
+    await chrome.storage.local.set({ messages: state.messages });
+    renderMessages(false); // 不移动窗口
+}
+
+// 恢复 Checkpoint（删除此消息及之后所有）
+async function handleRestoreCheckpoint(index: number) {
+    if (index < 0 || index >= state.messages.length) return;
+
+    // 直接删除从 index 开始的所有消息，不再确认
+    state.messages.splice(index);
+    await chrome.storage.local.set({ messages: state.messages });
+    renderMessages(false); // 不移动窗口
 }
 
 // 生成附件ID
@@ -644,9 +697,11 @@ async function sendMessage() {
         if (role !== 'error') {
             state.messages.push(message);
             chrome.storage.local.set({ messages: state.messages });
+            // 传入当前消息的索引，确保显示操作按钮
+            renderMessage(message, state.messages.length - 1);
+        } else {
+            renderMessage(message);
         }
-
-        renderMessage(message);
     }
     
     addMessage('user', content, attachmentsCopy);

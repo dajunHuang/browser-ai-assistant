@@ -114,17 +114,7 @@ body {
   scroll-behavior: smooth;
   display: flex;
   flex-direction: column;
-  gap: 24px;
-  /* Add top padding so first message isn't hidden if bars are always there? 
-     No, bars appear dynamically. If floating, they cover. 
-     User wants "page not move down". So overlay is correct. 
-  */
-}
-
-/* Ensure formatContent output in cards looks okay */
-.selection-card .card-content p {
-  margin: 0;
-  display: inline;
+  gap: 16px;
 }
 
 /* Welcome Message */
@@ -200,6 +190,7 @@ body {
   flex-direction: column;
   max-width: 100%;
   animation: messageSlideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative; /* Context for absolute positioning if needed */
 }
 
 .message.user {
@@ -232,6 +223,56 @@ body {
   color: var(--text-main);
   border: 1px solid var(--border-color);
   border-bottom-left-radius: 4px;
+}
+
+/* Message Actions (Delete/Restore) */
+.message-actions {
+  position: absolute;
+  bottom: 0; /* 与气泡底部对齐 */
+  right: 100%; /* Left of the bubble */
+  margin-right: 8px;
+  display: flex;
+  gap: 6px;
+  opacity: 0;
+  transition: opacity 0.2s;
+  pointer-events: none;
+}
+
+.message.user:hover .message-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.action-btn {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: var(--transition);
+  padding: 0;
+  box-shadow: var(--shadow-sm);
+}
+
+.action-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-main);
+  transform: scale(1.1);
+}
+
+.delete-btn:hover {
+  color: var(--error-color);
+  border-color: var(--error-color);
+}
+
+.restore-btn:hover {
+  color: var(--primary-color);
+  border-color: var(--primary-color);
 }
 
 /* Markdown Styling inside messages */
@@ -391,6 +432,12 @@ body {
   -webkit-box-orient: vertical;
 }
 
+/* Ensure formatContent output in cards looks okay */
+.selection-card .card-content p {
+  margin: 0;
+  display: inline;
+}
+
 .image-card {
   padding: 0;
   overflow: hidden;
@@ -413,15 +460,15 @@ body {
 .input-area {
   background: var(--bg-surface);
   border-top: 1px solid var(--border-color);
-  padding: 6px 12px 12px; /* 压缩顶部空白 (6px)，保留侧边和底边间距 */
+  padding: 6px 16px 12px; /* 压缩顶部空白 (6px)，保留侧边和底边间距 */
   position: relative;
   z-index: 20;
 }
 
 .input-tools {
   display: flex;
-  gap: 8px;           /* 8px spacing between tool buttons */
-  margin-bottom: 4px; /* 4px space below tools bar */
+  gap: 8px;
+  margin-bottom: 4px; /* Reduced margin */
   align-items: center;
   flex-wrap: wrap; 
 }
@@ -733,7 +780,7 @@ body {
 .settings-backdrop {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.4);
+  background: rgba(0, 0, 0, 0.6); /* 稍微减淡背景 */
   backdrop-filter: blur(4px);
 }
 

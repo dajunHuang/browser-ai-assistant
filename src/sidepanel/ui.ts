@@ -331,7 +331,7 @@ export function finalizeStreamingMessage(msgEl: HTMLElement): void {
 }
 
 // 渲染所有消息
-export function renderMessages(): void {
+export function renderMessages(shouldScroll: boolean = true): void {
     if (!elements.chatContainer) return;
 
     // 清除欢迎消息
@@ -343,13 +343,13 @@ export function renderMessages(): void {
     // 清空容器但不删除欢迎消息（如果它应该存在）
     if (state.messages.length > 0) {
         elements.chatContainer.innerHTML = ''; 
-        state.messages.forEach(msg => renderMessage(msg));
-        scrollToBottom(true);
+        state.messages.forEach((msg, i) => renderMessage(msg, i));
+        if (shouldScroll) scrollToBottom(true);
     }
 }
 
 // 渲染单条消息
-export function renderMessage(message: Message): void {
+export function renderMessage(message: Message, index: number = -1): void {
     if (!elements.chatContainer) return;
 
     // 移除欢迎消息
@@ -360,6 +360,7 @@ export function renderMessage(message: Message): void {
 
     const msgEl = document.createElement('div');
     msgEl.className = `message ${message.role}`;
+    if (index >= 0) msgEl.dataset.index = index.toString();
 
     // 构建消息内容
     let innerHTML = '';
@@ -411,9 +412,22 @@ export function renderMessage(message: Message): void {
     // 对用户消息提取并格式化显示
     if (message.role === 'user') {
         const parsed = parseUserMessage(message.content);
+        let actionsHTML = '';
+        if (index >= 0) {
+            actionsHTML = `
+            <div class="message-actions">
+                <button class="action-btn restore-btn" data-action="restore" data-index="${index}" title="撤销至此 (删除此条及之后)">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"></path><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"></path></svg>
+                </button>
+                <button class="action-btn delete-btn" data-action="delete" data-index="${index}" title="删除此条对话">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                </button>
+            </div>`;
+        }
+
         if (parsed.question) {
             const formattedContent = formatContent(parsed.question);
-            innerHTML += `<div class="message-content">${formattedContent}</div>`;
+            innerHTML += `<div class="message-content">${actionsHTML}${formattedContent}</div>`;
         }
     } else {
         const formattedContent = formatContent(message.content);
