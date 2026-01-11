@@ -82,15 +82,16 @@ export function updateSendButtonState(): void {
     if (!elements.sendBtn || !elements.messageInput) return;
 
     if (state.isLoading) {
-        // 加载中：显示取消按钮
-        elements.sendBtn.innerHTML = '✕';
+        // 加载中：显示停止按钮
+        elements.sendBtn.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2" ry="2"></rect></svg>';
         elements.sendBtn.disabled = false;
         elements.sendBtn.style.opacity = '1';
         elements.sendBtn.style.cursor = 'pointer';
-        elements.sendBtn.title = '取消回复';
+        elements.sendBtn.title = '停止生成';
+        elements.sendBtn.classList.add('stop-btn');
     } else {
         // 非加载中：显示发送按钮
-        elements.sendBtn.innerHTML = '➤';
+        elements.sendBtn.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>';
         const userInput = elements.messageInput.value.trim();
         const hasAttachments = state.attachments.length > 0;
         const hasPendingSelection = !!state.pendingSelection;
@@ -98,10 +99,12 @@ export function updateSendButtonState(): void {
 
         const canSend = userInput || hasAttachments || hasPendingSelection || hasPageContext;
 
-        elements.sendBtn.disabled = !canSend;
-        elements.sendBtn.style.opacity = canSend ? '1' : '0.5';
-        elements.sendBtn.style.cursor = canSend ? 'pointer' : 'not-allowed';
-        elements.sendBtn.title = '发送消息 (Enter)';
+        const btn = elements.sendBtn;
+        btn.disabled = !canSend;
+        btn.style.opacity = canSend ? '1' : '0.5';
+        btn.style.cursor = canSend ? 'pointer' : 'not-allowed';
+        btn.title = '发送消息 (Enter)';
+        btn.classList.remove('stop-btn');
     }
 }
 
@@ -111,7 +114,8 @@ export function showPendingSelection(): void {
     const preview = state.pendingSelection.length > 50 
         ? state.pendingSelection.substring(0, 50) + '...' 
         : state.pendingSelection;
-    elements.pendingSelectionText.textContent = `已选中: "${preview}"`;
+    // 恢复为纯文本渲染
+    elements.pendingSelectionText.textContent = preview;
     elements.pendingSelectionBar.classList.remove('hidden');
     updateAttachmentsBarPosition();
     updateSendButtonState();
@@ -129,10 +133,7 @@ export function hidePendingSelection(): void {
 
 // 更新附件列表的位置
 export function updateAttachmentsBarPosition(): void {
-    if (!elements.pendingSelectionBar || !elements.attachmentsBar) return;
-    const isPendingVisible = !elements.pendingSelectionBar.classList.contains('hidden');
-    const pendingHeight = isPendingVisible ? elements.pendingSelectionBar.offsetHeight : 0;
-    elements.attachmentsBar.style.top = `${pendingHeight}px`;
+    // 布局已改为静态流式布局，不再需要手动计算位置
 }
 
 interface AttachmentCallbacks {
@@ -162,19 +163,25 @@ export function renderAttachments(callbacks: AttachmentCallbacks = {}): void {
         let content = '';
         if (att.type === 'text') {
             const preview = att.content && att.content.length > 100 ? att.content.substring(0, 100) + '...' : att.content;
+            // 文本附件预览恢复为纯文本
             content = `
-        <div class="attachment-icon clickable-preview" data-preview-type="text" data-preview-id="${att.id}" style="cursor:pointer">📝</div>
+        <div class="attachment-icon clickable-preview" data-preview-type="text" data-preview-id="${att.id}" style="cursor:pointer">
+             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+        </div>
         <div class="attachment-info clickable-preview" data-preview-type="text" data-preview-id="${att.id}" style="cursor:pointer">
           <span class="attachment-name">选中文本</span>
-          <span class="attachment-preview">${escapeHtml(preview || '')}</span>
+          <div class="attachment-preview">${escapeHtml(preview || '')}</div>
         </div>`;
         } else if (att.type === 'file') {
             const preview = att.content && att.content.length > 80 ? att.content.substring(0, 80) + '...' : att.content;
+            // 文件预览也恢复为纯文本
             content = `
-        <div class="attachment-icon clickable-preview" data-preview-type="file" data-preview-id="${att.id}" style="cursor:pointer">📄</div>
+        <div class="attachment-icon clickable-preview" data-preview-type="file" data-preview-id="${att.id}" style="cursor:pointer">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="13 2 13 9 20 9"></polyline></svg>
+        </div>
         <div class="attachment-info clickable-preview" data-preview-type="file" data-preview-id="${att.id}" style="cursor:pointer">
           <span class="attachment-name">${escapeHtml(att.name || '')}</span>
-          <span class="attachment-preview">${escapeHtml(preview || '')}</span>
+          <div class="attachment-preview">${escapeHtml(preview || '')}</div>
         </div>`;
         } else if (att.type === 'image') {
             content = `
@@ -187,7 +194,9 @@ export function renderAttachments(callbacks: AttachmentCallbacks = {}): void {
         </div>`;
         } else if (att.type === 'pdf') {
             content = `
-        <div class="attachment-icon clickable-preview" data-preview-type="pdf" data-preview-id="${att.id}" style="cursor:pointer">📄</div>
+        <div class="attachment-icon clickable-preview" data-preview-type="pdf" data-preview-id="${att.id}" style="cursor:pointer">
+             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+        </div>
         <div class="attachment-info clickable-preview" data-preview-type="pdf" data-preview-id="${att.id}" style="cursor:pointer">
           <span class="attachment-name">${escapeHtml(att.name || '')}</span>
           <span class="attachment-size">PDF · 点击预览</span>
@@ -196,7 +205,9 @@ export function renderAttachments(callbacks: AttachmentCallbacks = {}): void {
 
         item.innerHTML = `
       ${content}
-      <button class="attachment-remove" data-remove-id="${att.id}" title="删除">✕</button>
+      <button class="attachment-remove" data-remove-id="${att.id}" title="删除">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+      </button>
     `;
 
         elements.attachmentsList?.appendChild(item);
@@ -237,7 +248,8 @@ export function showPreviewModal(type: string, content: string | undefined, titl
 
     let bodyContent = '';
     if (type === 'text') {
-        bodyContent = `<div class="preview-text">${formatContent(content)}</div>`;
+        // 预览弹窗改为纯文本显示
+        bodyContent = `<div class="preview-text">${escapeHtml(content)}</div>`;
     } else if (type === 'image') {
         bodyContent = `<img class="preview-image" src="${content}" alt="${escapeHtml(title || '')}">`;
     }
@@ -247,7 +259,9 @@ export function showPreviewModal(type: string, content: string | undefined, titl
     <div class="preview-modal-content">
       <div class="preview-modal-header">
         <span class="preview-modal-title">${escapeHtml(title || '')}</span>
-        <button class="preview-modal-close">✕</button>
+        <button class="preview-modal-close">
+             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
       </div>
       <div class="preview-modal-body">
         ${bodyContent}
@@ -363,18 +377,19 @@ export function renderMessage(message: Message): void {
                 if (att.base64) {
                     innerHTML += `
             <div class="attachment-card pdf-card msg-preview-pdf" style="cursor:pointer" data-base64="${att.base64}" title="点击预览 PDF">
-              <span class="pdf-icon">📄</span>
+              <span class="pdf-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg></span>
               <span class="pdf-name">${escapeHtml(att.name || '')}</span>
             </div>`;
                 } else {
                     innerHTML += `
             <div class="attachment-card pdf-card">
-              <span class="pdf-icon">📄</span>
+              <span class="pdf-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg></span>
               <span class="pdf-name">${escapeHtml(att.name || '')}</span>
             </div>`;
                 }
             } else if (att.type === 'text') {
                 const preview = att.content && att.content.length > 100 ? att.content.substring(0, 100) + '...' : att.content;
+                // 聊天记录中的选中文本卡片恢复为纯文本处理
                 innerHTML += `
           <div class="attachment-card selection-card msg-preview-text" style="cursor:pointer" data-content="${encodeURIComponent(att.content || '')}" title="点击查看完整文本">
             <div class="card-label">📝 选中文本</div>
@@ -382,8 +397,9 @@ export function renderMessage(message: Message): void {
           </div>`;
             } else if (att.type === 'file') {
                 const preview = att.content ? (att.content.length > 100 ? att.content.substring(0, 100) + '...' : att.content) : '';
+                // 文件预览恢复为纯文本，并复用 selection-card 样式以保持标题独占一行
                 innerHTML += `
-          <div class="attachment-card file-card msg-preview-text" style="cursor:pointer" data-content="${encodeURIComponent(att.content || '')}" title="点击查看文件内容">
+          <div class="attachment-card file-card selection-card msg-preview-text" style="cursor:pointer" data-content="${encodeURIComponent(att.content || '')}" title="点击查看文件内容">
             <div class="card-label">📄 ${escapeHtml(att.name || '')}</div>
             <div class="card-content">${escapeHtml(preview || '')}</div>
           </div>`;
@@ -458,11 +474,22 @@ export function scrollToBottom(force = false, currentMessageEl: HTMLElement | nu
 export function clearChatUI(): void {
     if (!elements.chatContainer) return;
     elements.chatContainer.innerHTML = `
-    <div class="welcome-message">
-      <p>👋 对话已清空！</p>
-      <p>你可以开始新的对话了。</p>
-    </div>
-  `;
+        <div class="welcome-message">
+          <div class="welcome-icon">👋</div>
+          <h3>对话已清空</h3>
+          <p>你可以开始新的对话了。</p>
+          <div class="welcome-tips">
+            <div class="tip-item">
+              <span class="tip-icon">🖱️</span>
+              <span>选中网页文本右键发送</span>
+            </div>
+            <div class="tip-item">
+              <span class="tip-icon">📄</span>
+              <span>上传 PDF 或图片提问</span>
+            </div>
+          </div>
+        </div>
+    `;
 }
 
 // 更新附带页面选项的可用状态

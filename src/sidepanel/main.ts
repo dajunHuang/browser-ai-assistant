@@ -595,6 +595,18 @@ async function sendMessage() {
         content = `${contextPrefix}【用户的问题】\n${userInput || '请帮我总结这个页面的主要内容'}`;
     }
 
+    // Add Page Context indicator as an attachment if included
+    if (contextPrefix) {
+        const pageContextAttachment: Attachment = {
+            id: generateAttachmentId(),
+            type: 'file', // Render as a file card
+            name: '当前页面内容',
+            content: state.pageContext, // The full context content
+            mimeType: 'text/plain'
+        };
+        allAttachments.unshift(pageContextAttachment);
+    }
+
     if (state.includePageContext && contextPrefix) {
         state.includePageContext = false;
         if (elements.includePageContext) elements.includePageContext.checked = false;
